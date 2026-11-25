@@ -10,7 +10,7 @@ Figma Rails is not an MCP server, a packaged CLI, or a Figma plugin. The working
 
 From the repository root, with the Figma connector signed in:
 
-1. Write a `figma-cli-command/v1` envelope. Set `"transport": "figma-mcp-use-figma"`, the file key, the `create_session` id, and `skillNames` (`figma-use`, plus `figma-generate-design` when the change is visible). `dryRun` defaults to true.
+1. Write a `figma-cli-command/v1` envelope. Set `"transport": "figma-mcp-use-figma"`, the file key, the `create_session` id, and `skillNames` (`figma-use`, plus `figma-generate-design` for any live write). `dryRun` defaults to true. List each node you will change in `expectedChanges.mutatedNodeIds`, and its field groups in `expectedChanges.mutatedProperties` (for example `{"12:3": ["characters", "font"]}`).
 2. Lint the envelope, then render the snippet. Rendering refuses to write a file that fails the `code` rules.
 
 ```sh
@@ -19,7 +19,10 @@ python3 skills/figma-rails/connector.py render skills/figma-rails/snippets/snaps
   --args '{"rootId": "0:1"}' -o runs/demo/snapshot.js
 ```
 
-3. Send the rendered file unchanged as `use_figma` code. Snapshot the same scope before and after. `connector.py result` diffs those snapshots into a `figma-cli-result/v1` and fails on any create, update, or delete the envelope did not plan, including a parent frame that resized.
+3. Dry-run first: render the `dryRun: true` envelope to `runs/<commandId>/dry-run/<name>.js` and send it. The live render goes to `runs/<commandId>/<name>.js`, keeps the dry-run files, and refuses an envelope that plans anything the dry run did not.
+4. Send the rendered file unchanged as `use_figma` code. Snapshot the same scope before and after. `connector.py result` diffs those snapshots into a `figma-cli-result/v1` and fails on any create, update, or delete the envelope did not plan, including a parent frame that resized and a font, fill, stroke, or text style that changed on a node whose plan did not list it. If `use_figma` wrote its result to a file, `connector.py ingest <file> -o before.json` unwraps it; `result` reads wrapped files too.
+
+The snapshot (`figma-sink-snapshot/v2`) records geometry, visibility, text, typography (font, size, line height, letter spacing, alignment, text style, per range when mixed), and fills and strokes. It does not cover effects, node opacity or blend mode, corner radius, auto-layout settings, or image pixels; check those with a screenshot.
 
 New test work goes in a new file. Do not write into a file someone else is editing.
 
@@ -61,7 +64,7 @@ python3 -m unittest discover -v
 - The CDP debugging port listens on loopback only, in a profile used for nothing else. Never tunnel it, never read cookies or tokens, and stop only the browser process you started.
 - Every command is an envelope with an explicit `fileKey`, `pageId`, and `nodeId`. `dryRun` defaults to true. A live write needs `allowMutation`, an explicit id or parent scope, and caps on created, updated, and deleted nodes.
 - Deletes take explicit ids only, limited to nodes carrying a generated-name prefix or ids the command names. Nothing is deleted by name.
-- After a command, the same scope is read back. The before/after diff, not the script's own report, decides success. Any change outside the plan fails the run.
+- After a command, the same scope is read back. The before/after diff, not the script's own report, decides success. Any change outside the plan fails the run, and so does a report that misses a change or claims one that did not land.
 
 ## Design fidelity
 

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "transport": "figma-mcp-use-figma",
+  "command": "edit-kr13-text",
+  "target": {
+    "fileKey": "AbCdEfGhIjKlMnOpQrStUv",
+    "pageId": "516:2",
+    "nodeId": "530:359",
+    "rootNodeId": "530:330"
+  },
+  "skillNames": "figma-use,figma-generate-design",
+  "sessionId": "00000000-0000-4000-8000-000000000000",
+  "args": {
+    "nodeId": "530:359",
+    "expected": "Data program: applications 12/7 - 1/6",
+    "next": "Data program: applications 12/7 - 1/6, 5 pm"
+  },
+  "expectedChanges": {
+    "mutatedNodeIds": [
+      "530:359"
+    ],
+    "createdNames": [],
+    "mutatedProperties": {
+      "530:359": [
+        "characters",
+        "color"
+      ]
+    }
+  },
+  "timeoutMs": 30000,
+  "guards": {
+    "allowMutation": true,
+    "allowedNodeIds": [
+      "530:359"
+    ],
+    "allowedParentIds": [],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 0,
+    "maxDeletedNodes": 0,
+    "maxUpdatedNodes": 1
+  },
+  "steps": [
+    "snapshot-before",
+    "revalidate-target",
+    "apply",
+    "snapshot-after",
+    "compare-plan"
+  ],
+  "commandId": "cmd_kr13_sf_time",
+  "script": "runs/cmd_kr13_sf_time/edit.js",
+  "dryRun": false
+}

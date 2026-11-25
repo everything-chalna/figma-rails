@@ -25,6 +25,7 @@
   "verification": {
     "ok": false,
     "source": "snapshot-diff",
+    "snapshotSchema": "figma-sink-snapshot/v2",
     "rootId": "0:1",
     "unexpectedChanges": [
       {

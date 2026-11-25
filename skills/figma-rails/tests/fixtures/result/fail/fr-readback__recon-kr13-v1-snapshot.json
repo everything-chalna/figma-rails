@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "figma-cli-result/v1",
+  "commandId": "cmd_kr13_sf_time",
+  "transport": "figma-mcp-use-figma",
+  "ok": true,
+  "status": "passed",
+  "plan": {
+    "create": [],
+    "update": [
+      "530:359"
+    ],
+    "delete": [],
+    "reparent": []
+  },
+  "changes": {
+    "created": [],
+    "updated": [
+      "530:359"
+    ],
+    "deleted": [],
+    "reparented": [],
+    "selection": []
+  },
+  "verification": {
+    "ok": true,
+    "source": "snapshot-diff",
+    "rootId": "530:330",
+    "unexpectedChanges": []
+  },
+  "artifacts": [
+    {
+      "type": "png",
+      "path": "runs/cmd_kr13_sf_time/KR-13.png",
+      "sha256": "95ee72afe0400245da2a1ba8c8cd981faf05b90bbf1bb8cf878ab2b2e07184ae"
+    }
+  ],
+  "warnings": [],
+  "retryable": false,
+  "errorCode": null,
+  "error": null
+}
