@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "transport": "figma-mcp-use-figma",
+  "command": "edit-cmd_layout_padding",
+  "target": {
+    "fileKey": "AbCdEfGhIjKlMnOpQrStUv",
+    "pageId": "0:1",
+    "nodeId": "3:5",
+    "rootNodeId": "0:1"
+  },
+  "skillNames": "figma-use,figma-generate-design",
+  "sessionId": "00000000-0000-4000-8000-000000000000",
+  "args": {},
+  "expectedChanges": {
+    "mutatedNodeIds": [
+      "3:5",
+      "3:2",
+      "3:6"
+    ],
+    "createdNames": [],
+    "mutatedProperties": {
+      "3:5": [
+        "geometry"
+      ],
+      "3:2": [
+        "geometry"
+      ],
+      "3:6": [
+        "geometry"
+      ]
+    }
+  },
+  "timeoutMs": 30000,
+  "guards": {
+    "allowMutation": true,
+    "allowedNodeIds": [
+      "3:5",
+      "3:2",
+      "3:6"
+    ],
+    "allowedParentIds": [],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 0,
+    "maxDeletedNodes": 0,
+    "maxUpdatedNodes": 3
+  },
+  "steps": [
+    "snapshot-before",
+    "revalidate-target",
+    "apply",
+    "snapshot-after",
+    "compare-plan"
+  ],
+  "commandId": "cmd_layout_padding",
+  "script": "runs/cmd_layout_padding/edit.js",
+  "dryRun": false
+}

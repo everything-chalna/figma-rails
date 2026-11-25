@@ -1,5 +1,19 @@
 {
  "schemaVersion": "figma-sink-snapshot/v2",
+ "readGroups": [
+  "name",
+  "structure",
+  "geometry",
+  "visibility",
+  "characters",
+  "font",
+  "fill",
+  "stroke",
+  "textStyle",
+  "effect",
+  "radius",
+  "layout"
+ ],
  "rootId": "0:1",
  "rootType": "PAGE",
  "nodes": [
@@ -30,7 +44,23 @@
    "fillStyleId": null,
    "strokes": [],
    "strokeStyleId": null,
-   "strokeWeight": 1
+   "strokeWeight": 1,
+   "effects": [],
+   "effectStyleId": null,
+   "cornerRadius": 12,
+   "cornerSmoothing": 0,
+   "layoutMode": "VERTICAL",
+   "primaryAxisSizingMode": "AUTO",
+   "counterAxisSizingMode": "FIXED",
+   "paddingLeft": 24,
+   "paddingRight": 24,
+   "paddingTop": 24,
+   "paddingBottom": 24,
+   "itemSpacing": 8,
+   "counterAxisSpacing": 0,
+   "primaryAxisAlignItems": "MIN",
+   "counterAxisAlignItems": "MIN",
+   "layoutWrap": "NO_WRAP"
   },
   {
    "id": "1:3",
@@ -75,7 +105,14 @@
    },
    "textAlignHorizontal": "LEFT",
    "textAlignVertical": "TOP",
-   "textStyleId": null
+   "textStyleId": null,
+   "effects": [],
+   "effectStyleId": null,
+   "layoutAlign": "INHERIT",
+   "layoutGrow": 0,
+   "layoutPositioning": "AUTO",
+   "layoutSizingHorizontal": "HUG",
+   "layoutSizingVertical": "HUG"
   },
   {
    "id": "1:4",
@@ -148,7 +185,14 @@
       }
      ]
     }
-   ]
+   ],
+   "effects": [],
+   "effectStyleId": null,
+   "layoutAlign": "STRETCH",
+   "layoutGrow": 0,
+   "layoutPositioning": "AUTO",
+   "layoutSizingHorizontal": "FILL",
+   "layoutSizingVertical": "HUG"
   }
  ]
 }

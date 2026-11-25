@@ -13,7 +13,7 @@ import check
 
 READ_ONLY_COMMAND = {"dryRun": True, "guards": {"allowMutation": False}}
 FUNCTION_SNIPPET_RE = re.compile(r"^\s*async\s*\(\s*(\{[^)]*\}|\w+)?\s*\)\s*=>")
-SNAPSHOT_SCHEMA, FIELD_GROUPS, STYLE_GROUPS = check.SNAPSHOT_SCHEMA, check.FIELD_GROUPS, check.STYLE_GROUPS
+SNAPSHOT_SCHEMA, FIELD_GROUPS, EXPLICIT_GROUPS = check.SNAPSHOT_SCHEMA, check.FIELD_GROUPS, check.EXPLICIT_GROUPS
 GROUP_OF = {field: group for group, fields in FIELD_GROUPS.items() for field in fields}
 
 
@@ -132,6 +132,9 @@ def load_snapshot(path):
         fail(f"{path} holds no snippets/snapshot.js result ({SNAPSHOT_SCHEMA}), plain or wrapped by use_figma write_to_file.")
     if data["schemaVersion"] != SNAPSHOT_SCHEMA:
         fail(f"{path} is {data['schemaVersion']}, which has no font, fill, stroke or text-style fields; re-run the current snippets/snapshot.js (a stale copy in a run folder is the usual cause).")
+    missing = [g for g in FIELD_GROUPS if g not in (data.get("readGroups") or [])]
+    if missing:
+        fail(f"{path} did not read {', '.join(missing)}; it came from an older snippets/snapshot.js. Re-run the current one (a stale copy in a run folder is the usual cause).")
     return data
 
 
@@ -205,9 +208,9 @@ def build_result(command, before, after, reported=None, run_dir=None, artifacts=
             unexpected.append({"kind": "unplanned-update", "id": i, "fields": groups[i]})
             continue
         allowed = planned_props.get(i)
-        extra = [g for g in groups[i] if (g not in allowed if isinstance(allowed, list) else g in STYLE_GROUPS)]
+        extra = [g for g in groups[i] if (g not in allowed if isinstance(allowed, list) else g in EXPLICIT_GROUPS)]
         if extra:
-            unexpected.append({"kind": "unplanned-field", "id": i, "fields": extra, "planned": allowed if isinstance(allowed, list) else "non-style fields only (list style groups in expectedChanges.mutatedProperties)"})
+            unexpected.append({"kind": "unplanned-field", "id": i, "fields": extra, "planned": allowed if isinstance(allowed, list) else f"any group except {', '.join(EXPLICIT_GROUPS)} (list those in expectedChanges.mutatedProperties)"})
     def under_planned_delete(node_id):
         while node_id in b:
             if node_id in planned_delete:
@@ -224,7 +227,7 @@ def build_result(command, before, after, reported=None, run_dir=None, artifacts=
             unexpected.append({"kind": "report-differs-from-readback", "field": "created", "reported": sorted(reported_ids), "readback": sorted(created_ids)})
         if reported.get("updated") is not None:
             said = set(reported["updated"])
-            missed = [i for i in updated if i not in said]
+            missed = [i for i in updated if i not in said and i not in planned_update]
             phantom = sorted(said - set(updated) - created_ids)
             if missed:
                 unexpected.append({"kind": "report-missed-change", "field": "updated", "ids": missed, "fields": {i: groups[i] for i in missed}})

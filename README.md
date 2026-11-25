@@ -24,7 +24,7 @@ python3 skills/figma-rails/connector.py render skills/figma-rails/snippets/snaps
 ```
 
 3. Dry-run first: render the `dryRun: true` envelope to `runs/<commandId>/dry-run/<name>.js` and send it. The live render goes to `runs/<commandId>/<name>.js`, keeps the dry-run files, and refuses an envelope that plans anything the dry run did not.
-4. Send the rendered file unchanged as `use_figma` code. Snapshot the same scope before and after. `connector.py result` diffs those snapshots into a `figma-cli-result/v1` and fails on any create, update, or delete the envelope did not plan, including a parent frame that resized and a font, fill, stroke, or text style that changed on a node whose plan did not list it. If `use_figma` wrote its result to a file, `connector.py ingest <file> -o before.json` unwraps it; `result` reads wrapped files too.
+4. Send the rendered file unchanged as `use_figma` code. Snapshot the same scope before and after. `connector.py result` diffs those snapshots into a `figma-cli-result/v1` and fails on any create, update, or delete the envelope did not plan, including a parent frame that resized and a font, fill, stroke, text style, effect, corner radius, or auto-layout setting that changed on a node whose plan did not list it. If `use_figma` wrote its result to a file, `connector.py ingest <file> -o before.json` unwraps it; `result` reads wrapped files too.
 
 ## Transports
 
@@ -72,8 +72,8 @@ The same rails work for matching a build to a Figma frame, and for rebuilding a 
 
 ## Status
 
-Readback compares geometry, visibility, text, and typography, including mixed ranges. It also compares fills, strokes, and text style.
+Readback compares geometry, visibility, text, and typography, including mixed ranges. It also compares fills, strokes, text style, effects, corner radius (each corner when mixed), and auto-layout: frame mode, sizing, padding, spacing, alignment, and wrap, plus each child's align, grow, positioning, and sizing.
 
-It does not yet compare effects, opacity or blend, corner radius, auto-layout, constraints, rotation, component properties, or image pixels. Text longer than 200 characters, and a node with more than 50 segments, are outside the diff too. Check those with a screenshot.
+It does not yet compare node opacity or blend, constraints, rotation, component properties, or image pixels. Text longer than 200 characters, and a node with more than 50 segments, are outside the diff too. Check those with a screenshot.
 
 The skill, lint checker, and runner are in this repository at `skills/figma-rails/`. This repository is MIT licensed.
