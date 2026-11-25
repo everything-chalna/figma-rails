@@ -90,6 +90,19 @@ TRANSPORTS = {CDP_TRANSPORT, CONNECTOR_TRANSPORT}
 CONNECTOR_FILE_KEY_RE = re.compile(r"[0-9a-zA-Z]{22,128}")
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 READ_ONLY_COMMANDS = {"probe", "extract", "list-pages", "export", "audit", "select-node", "capture"}
+SNAPSHOT_SCHEMA = "figma-sink-snapshot/v2"
+FIELD_GROUPS = {
+    "name": ("name",),
+    "structure": ("type", "parentId"),
+    "geometry": ("x", "y", "width", "height"),
+    "visibility": ("visible", "locked"),
+    "characters": ("characters",),
+    "font": ("fontName", "fontSize", "lineHeight", "letterSpacing", "textAlignHorizontal", "textAlignVertical"),
+    "fill": ("fills", "fillStyleId"),
+    "stroke": ("strokes", "strokeStyleId", "strokeWeight"),
+    "textStyle": ("textStyleId",),
+}
+STYLE_GROUPS = ("font", "fill", "stroke", "textStyle")
 FIGMA_DEFAULT_NAMES = {"frame", "group", "rectangle", "text", "vector", "ellipse", "component", "section", "image", "layer"}
 
 
@@ -250,8 +263,8 @@ def envelope(text):
         skills = {s.strip().removeprefix("resource:") for s in str(data.get("skillNames", "")).split(",")}
         if "figma-use" not in skills:
             found.append(Finding("fe-transport", "connector calls need skillNames with 'figma-use' (use_figma requires the figma-use guidance to be loaded first).", 1))
-        if data.get("dryRun") is False and isinstance(guards.get("maxCreatedNodes"), int) and guards["maxCreatedNodes"] > 0 and "figma-generate-design" not in skills:
-            found.append(Finding("fe-transport", "a live connector write that creates visible nodes needs 'figma-generate-design' in skillNames as well; load that skill before writing.", 1))
+        if data.get("dryRun") is False and "figma-generate-design" not in skills:
+            found.append(Finding("fe-transport", "a live connector write (create, edit or delete) is a visible change and needs 'figma-generate-design' in skillNames as well; load that skill before writing.", 1))
         if not isinstance(data.get("sessionId"), str) or not UUID_RE.fullmatch(data["sessionId"]):
             found.append(Finding("fe-transport", "connector commands carry the sessionId UUID from create_session; call create_session once per task and reuse it.", 1))
     found += check_node_id(target.get("pageId"), "target.pageId", "fe-target")
@@ -308,6 +321,17 @@ def envelope(text):
         expected = data.get("expectedChanges")
         if "rootNodeId" not in target or not isinstance(expected, dict) or not isinstance(expected.get("mutatedNodeIds"), list):
             found.append(Finding("fe-readback", "a live write needs target.rootNodeId (the before/after snapshot scope) and expectedChanges.mutatedNodeIds so the readback can prove nothing else changed.", 1))
+        elif "mutatedProperties" in expected:
+            props = expected["mutatedProperties"]
+            if not isinstance(props, dict) or any(not isinstance(v, list) for v in props.values()):
+                found.append(Finding("fe-readback", "expectedChanges.mutatedProperties maps a node id to a list of field groups, e.g. {\"12:3\": [\"characters\", \"font\"]}.", 1))
+            else:
+                for node_id, fields in props.items():
+                    unknown = [f for f in fields if f not in FIELD_GROUPS]
+                    if node_id not in expected["mutatedNodeIds"]:
+                        found.append(Finding("fe-readback", f"mutatedProperties names {node_id}, which is not in expectedChanges.mutatedNodeIds; plan the node first.", 1))
+                    if unknown:
+                        found.append(Finding("fe-readback", f"mutatedProperties[{node_id!r}] has unknown field groups {unknown}; use {', '.join(FIELD_GROUPS)}.", 1))
         script = data.get("script", "")
         if not connector and isinstance(script, str) and not re.fullmatch(r"[A-Za-z][\w.-]*", script):
             found.append(Finding("fe-script", "live writes run a registered, reviewed script name, not inline code; inline snippets are for read-only probes.", 1))
@@ -412,6 +436,8 @@ def result(text):
             found.append(Finding("fr-readback", "ok is true without a passing readback; re-read the same scope after the command and set verification.ok from the diff, not from the command's own report.", 1))
         elif verification.get("unexpectedChanges"):
             found.append(Finding("fr-readback", "verification lists unexpectedChanges but ok is true; any unplanned change fails the run.", 1))
+        elif verification.get("source") == "snapshot-diff" and verification.get("snapshotSchema") != SNAPSHOT_SCHEMA:
+            found.append(Finding("fr-readback", f"the readback diffed {verification.get('snapshotSchema') or 'figma-sink-snapshot/v1'} snapshots, which have no font, fill, stroke or text-style fields, so a style side effect would pass; re-snapshot with the current snippets/snapshot.js ({SNAPSHOT_SCHEMA}) and rebuild the result with connector.py result.", 1))
     for group, keys in ((plan, ("create", "update", "delete", "reparent")), (changes, ("created", "updated", "deleted", "reparented", "selection"))):
         if any(not isinstance(group.get(key, []), list) for key in keys):
             return found + [Finding("fr-format", "plan and changes entries must be lists.", 1)]

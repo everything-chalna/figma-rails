@@ -1,0 +1,6 @@
+<tool_result source="use_figma">
+
+{"dryRun":true,"plan":{"update":["1:4"],"fills":["#B00020"]}}
+"$file:/work/runs/cmd_style_fill/dry-run/edit.js" was replaced with the contents of /work/runs/cmd_style_fill/dry-run/edit.js (1164 bytes) before the call.
+
+</tool_result>
