@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "figma-cli-result/v1",
+  "commandId": "cmd_cleanup",
+  "transport": "figma-mcp-use-figma",
+  "ok": true,
+  "status": "passed",
+  "plan": {
+    "create": [],
+    "update": [
+      "2:2"
+    ],
+    "delete": [
+      "2:2"
+    ],
+    "reparent": []
+  },
+  "changes": {
+    "created": [],
+    "updated": [],
+    "deleted": [
+      "2:2"
+    ],
+    "reparented": [],
+    "selection": []
+  },
+  "verification": {
+    "ok": true,
+    "source": "snapshot-diff",
+    "snapshotSchema": "figma-sink-snapshot/v2",
+    "rootId": "0:1",
+    "unexpectedChanges": []
+  },
+  "artifacts": [
+    {
+      "type": "json",
+      "path": "runs/cmd_cleanup/after.json",
+      "sha256": "4664e5fdf4bf1505bf353ba0b407d660b75ba62d288d67827a07b6df62d07fe7"
+    }
+  ],
+  "warnings": [],
+  "retryable": false,
+  "errorCode": null,
+  "error": null
+}

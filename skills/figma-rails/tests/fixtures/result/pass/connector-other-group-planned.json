@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "figma-cli-result/v1",
+  "commandId": "cmd_full_opacity",
+  "transport": "figma-mcp-use-figma",
+  "ok": true,
+  "status": "passed",
+  "plan": {
+    "create": [],
+    "update": [
+      "9:6"
+    ],
+    "delete": [],
+    "reparent": []
+  },
+  "changes": {
+    "created": [],
+    "updated": [
+      "9:6"
+    ],
+    "deleted": [],
+    "reparented": [],
+    "selection": []
+  },
+  "verification": {
+    "ok": true,
+    "source": "snapshot-diff",
+    "snapshotSchema": "figma-sink-snapshot/v3",
+    "rootId": "0:1",
+    "fieldChanges": {
+      "9:6": [
+        "other:opacity"
+      ]
+    },
+    "unexpectedChanges": []
+  },
+  "artifacts": [],
+  "warnings": [],
+  "retryable": false,
+  "errorCode": null,
+  "error": null
+}

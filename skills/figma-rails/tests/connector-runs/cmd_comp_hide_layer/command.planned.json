@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "transport": "figma-mcp-use-figma",
+  "command": "edit-cmd_comp_bool",
+  "target": {
+    "fileKey": "AbCdEfGhIjKlMnOpQrStUv",
+    "pageId": "0:1",
+    "nodeId": "14:8",
+    "rootNodeId": "0:1"
+  },
+  "skillNames": "figma-use,figma-generate-design",
+  "sessionId": "00000000-0000-4000-8000-000000000000",
+  "args": {
+    "set": {
+      "14:8": {
+        "props": {
+          "Show Dot": false
+        }
+      }
+    }
+  },
+  "expectedChanges": {
+    "mutatedNodeIds": [
+      "14:8",
+      "I14:8;14:4"
+    ],
+    "createdNames": [],
+    "mutatedProperties": {
+      "14:8": [
+        "other:componentProperties",
+        "other:overrides",
+        "geometry"
+      ],
+      "I14:8;14:4": [
+        "visibility"
+      ]
+    }
+  },
+  "timeoutMs": 30000,
+  "guards": {
+    "allowMutation": true,
+    "allowedNodeIds": [
+      "14:8",
+      "I14:8;14:4"
+    ],
+    "allowedParentIds": [],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 0,
+    "maxDeletedNodes": 0,
+    "maxUpdatedNodes": 2
+  },
+  "steps": [
+    "snapshot-before",
+    "revalidate-target",
+    "apply",
+    "snapshot-after",
+    "compare-plan"
+  ],
+  "commandId": "cmd_comp_bool",
+  "script": "runs/cmd_comp_bool/edit.js",
+  "dryRun": false
+}

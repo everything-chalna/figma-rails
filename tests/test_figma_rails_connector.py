@@ -168,12 +168,12 @@ class LayoutReadbackTest(unittest.TestCase):
     def test_snapshot_without_new_groups_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             old = Path(tmp, "old.json")
-            data = load("cmd_layout_effect", "before.json")
-            data["readGroups"] = data["readGroups"][:9]
+            data = load("cmd_full_noop", "before.json")
+            data["readGroups"] = data["readGroups"][:-1]
             old.write_text(json.dumps(data))
             proc = run_cli("ingest", old, "-o", Path(tmp, "out.json"))
             self.assertEqual(proc.returncode, 1)
-            self.assertIn("did not read effect, radius, layout", proc.stderr)
+            self.assertIn("did not read other", proc.stderr)
 
     def test_snapshot_snippet_reads_every_checker_group(self):
         src = (SKILL / "snippets" / "snapshot.js").read_text()
@@ -189,9 +189,8 @@ class LayoutReadbackTest(unittest.TestCase):
                   "offset": {"x": 0, "y": 4}, "radius": 12, "spread": 0, "showShadowBehindNode": False,
                   "boundVariables": {"radius": {"type": "VARIABLE_ALIAS", "id": "VariableID:1:2"}}}
         node = snapshot_with_effects([progressive, shadow])
-        self.assertEqual(node["effects"][0], {"visible": True, "type": "LAYER_BLUR", "radius": 8, "blurType": "PROGRESSIVE",
-                                              "startRadius": 0, "startOffset": {"x": 0.5, "y": 0}, "endOffset": {"x": 0.5, "y": 1}})
-        self.assertEqual(node["effects"][1]["boundVariables"], {"radius": "VariableID:1:2"})
+        self.assertEqual(node["effects"][0], progressive)
+        self.assertEqual(node["effects"][1]["boundVariables"], {"radius": {"type": "VARIABLE_ALIAS", "id": "VariableID:1:2"}})
         self.assertEqual(node["effects"][1]["color"], {"r": 0, "g": 0, "b": 0, "a": 0.2})
 
 
@@ -221,21 +220,258 @@ class EdgeReadbackTest(unittest.TestCase):
         self.assertEqual(kinds(out), [("unplanned-update", ["geometry"])] * 2)
 
 
+class FullPropertyReadbackTest(unittest.TestCase):
+    """Live v3 snapshots from a scratch file (2026-11-25): Swatch opacity 1 -> 0.5, blendMode PASS_THROUGH -> MULTIPLY, Spinner rotation 0 -> 15, Pinned constraints MIN/MIN -> MAX/CENTER, and a dry run with no writes."""
+
+    def test_properties_the_allowlist_missed_fail_unless_planned(self):
+        for run, prop in (("cmd_full_opacity", "opacity"), ("cmd_full_blend", "blendMode"), ("cmd_full_rotation", "rotation"), ("cmd_full_constraints", "constraints")):
+            with self.subTest(run):
+                self.assertEqual(kinds(build(run)), [("unplanned-field", [f"other:{prop}"])])
+                self.assertTrue(build_planned(run, reported=connector.reported_ids(load(run, "returned.json")))["ok"])
+
+    def test_read_only_run_has_no_diff(self):
+        out = build("cmd_full_noop")
+        self.assertEqual((out["status"], out["verification"]["fieldChanges"]), ("dry-run", {}))
+
+    def test_ignore_list_keeps_a_planned_rotation_passing(self):
+        command = load("cmd_full_rotation", "command.planned.json")
+        control = connector.build_result(command, load("cmd_full_rotation", "control-no-ignore.before.json"), load("cmd_full_rotation", "control-no-ignore.after.json"))
+        self.assertEqual(kinds(control), [("unplanned-field", ["other:absoluteBoundingBox", "other:absoluteRenderBounds", "other:absoluteTransform"])])
+        self.assertTrue(build_planned("cmd_full_rotation")["ok"])
+
+    def test_unmapped_property_fails_closed(self):
+        before, after = load("cmd_full_opacity", "before.json"), load("cmd_full_opacity", "before.json")
+        next(n for n in after["nodes"] if n["id"] == "9:6")["someFutureProperty"] = 1
+        out = connector.build_result(load("cmd_full_opacity", "command.planned.json"), before, after)
+        self.assertEqual(kinds(out), [("unplanned-field", ["other:someFutureProperty"])])
+        plain = dict(load("cmd_full_opacity", "command.planned.json"), expectedChanges={"mutatedNodeIds": ["9:6"], "createdNames": []})
+        self.assertEqual(kinds(connector.build_result(plain, before, after)), [("unplanned-field", ["other:someFutureProperty"])])
+
+    def test_old_allowlist_fixtures_still_diff_the_same(self):
+        self.assertEqual(kinds(build("cmd_layout_padding")), [("unplanned-field", ["layout"])])
+        self.assertEqual(kinds(build("cmd_edge_absolute")), [("unplanned-field", ["layout"])])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_snapshot_records_unknown_props_and_drops_ignored_ones(self):
+        base = {"opacity": 1, "absoluteRenderBounds": {"x": 0, "y": 0, "width": 160, "height": 80}}
+        a = snapshot_node(base)
+        b = snapshot_node(dict(base, absoluteRenderBounds={"x": 0.3, "y": 0, "width": 159.4, "height": 80}))
+        self.assertNotIn("absoluteRenderBounds", a)
+        self.assertEqual(connector.changed_groups(a, b), [])
+        c = snapshot_node(dict(base, someFutureProperty="on"))
+        self.assertEqual(connector.changed_groups(a, c), ["other:someFutureProperty"])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_snapshot_bounds_big_values_and_long_text(self):
+        node = snapshot_node({"vectorPaths": [{"windingRule": "NONZERO", "data": "M0 0 " + "L1 1 " * 2000}]})
+        self.assertEqual(set(node["vectorPaths"]), {"__digest__", "length"})
+        text = snapshot_node({"type": "TEXT", "characters": "a" * 300})
+        longer = snapshot_node({"type": "TEXT", "characters": "a" * 299 + "b"})
+        self.assertEqual(text["characters"], longer["characters"])
+        self.assertEqual(connector.changed_groups(text, longer), ["characters"])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_component_swap_fails_closed(self):
+        a, b = snapshot_node({"type": "INSTANCE", "__main": "1:10"}), snapshot_node({"type": "INSTANCE", "__main": "1:11"})
+        self.assertEqual(connector.changed_groups(a, b), ["other:mainComponentId"])
+
+    def test_every_ignored_property_has_a_reason(self):
+        src = (SKILL / "snippets" / "snapshot.js").read_text()
+        block = re.search(r"const IGNORED = \{(.*?)\n  \};", src, re.S).group(1)
+        entries = re.findall(r"^\s*(\w+): \"([^\"]*)\",$", block, re.M)
+        self.assertGreater(len(entries), 20)
+        self.assertEqual(len(entries), len([l for l in block.splitlines() if l.strip()]))
+        self.assertTrue(all(len(reason) > 10 for _, reason in entries))
+
+
 SNAPSHOT_HARNESS = """
 const src = require("fs").readFileSync(process.argv[1], "utf8");
-const effects = JSON.parse(process.argv[2]);
+const props = JSON.parse(process.argv[2]);
+const mainId = props.__main;
+delete props.__main;
 const page = { id: "0:1", type: "PAGE", children: [] };
-page.children.push({ id: "6:2", name: "card", type: "FRAME", parent: page, x: 0, y: 0, width: 160, height: 80, visible: true, locked: false,
-  fills: [], fillStyleId: "", strokes: [], strokeStyleId: "", strokeWeight: 1, effects, effectStyleId: "", cornerRadius: 16, cornerSmoothing: 0, layoutMode: "NONE" });
+const node = Object.assign({ id: "6:2", name: "card", type: "FRAME", parent: page, removed: false, x: 0, y: 0, width: 160, height: 80, visible: true, locked: false, effects: [] }, props);
+if (node.type === "TEXT") node.getStyledTextSegments = () => [];
+if (node.type === "INSTANCE") node.getMainComponentAsync = async () => ({ id: mainId });
+page.children.push(node);
 globalThis.figma = { mixed: Symbol("mixed"), getNodeByIdAsync: async () => page, setCurrentPageAsync: async () => {} };
 eval(src)({ rootId: "0:1" }).then((out) => console.log(JSON.stringify(out.nodes[0])));
 """
 
 
-def snapshot_with_effects(effects):
-    proc = subprocess.run(["node", "-e", SNAPSHOT_HARNESS, str(SKILL / "snippets" / "snapshot.js"), json.dumps(effects)],
+def snapshot_node(props):
+    proc = subprocess.run(["node", "-e", SNAPSHOT_HARNESS, str(SKILL / "snippets" / "snapshot.js"), json.dumps(props)],
                           capture_output=True, text=True, check=True)
     return json.loads(proc.stdout)
+
+
+TREE_HARNESS = """
+const src = require("fs").readFileSync(process.argv[1], "utf8");
+const spec = JSON.parse(process.argv[2]);
+const figma = { mixed: Symbol("mixed"), skipInvisibleInstanceChildren: true, setCurrentPageAsync: async () => {} };
+globalThis.figma = figma;
+const build = (t, parent, inInstance) => {
+  const n = Object.assign({ name: "n", type: "FRAME", parent, removed: false, x: 0, y: 0, width: 10, height: 10, visible: true }, t);
+  delete n.children; delete n.__main;
+  if (n.type === "INSTANCE") n.getMainComponentAsync = async () => ({ id: t.__main });
+  if (n.type === "TEXT") n.getStyledTextSegments = () => [];
+  if (t.children) {
+    const inside = inInstance || n.type === "INSTANCE";
+    const kids = t.children.map((k) => build(k, n, inside));
+    Object.defineProperty(n, "children", { get: () => kids.filter((c) => !(inside && figma.skipInvisibleInstanceChildren && !c.visible)) });
+  }
+  return n;
+};
+const page = build({ id: "0:1", type: "PAGE", children: spec.nodes }, null, false);
+figma.getNodeByIdAsync = async () => page;
+const code = spec.captureFull ? src.replace("  const snapshotDigest =", "  globalThis.__full = nodes;\\n  const snapshotDigest =") : src;
+eval(code)(Object.assign({ rootId: "0:1" }, spec.args || {})).then((out) => console.log(JSON.stringify({ out, full: globalThis.__full, skipInvisibleAfter: figma.skipInvisibleInstanceChildren })));
+"""
+
+
+def snapshot_tree(nodes, capture_full=False, **args):
+    proc = subprocess.run(["node", "-e", TREE_HARNESS, str(SKILL / "snippets" / "snapshot.js"), json.dumps({"nodes": nodes, "args": args, "captureFull": capture_full})],
+                          capture_output=True, text=True, check=True)
+    return json.loads(proc.stdout)
+
+
+def snapshot_with_effects(effects):
+    return snapshot_node({"effects": effects})
+
+
+class InstanceSwapReadbackTest(unittest.TestCase):
+    """Live v3 snapshots from a scratch file (2026-11-25): instance 14:8 swapped from comp A (14:2) to comp B (14:5), captured with the snippet that still recorded masterComponent, then swapped back with the fixed snippet."""
+
+    def test_planned_swap_passes_and_its_new_sublayers_are_not_creates(self):
+        run = "cmd_comp_swap_back"
+        out = build_planned(run, reported=connector.reported_ids(load(run, "returned.json")))
+        self.assertTrue(out["ok"], out["verification"])
+        self.assertEqual(out["changes"]["created"], [])
+        self.assertEqual(out["changes"]["swappedInstanceSublayers"], {"created": [{"id": "I14:8;14:3", "name": "Label"}, {"id": "I14:8;14:4", "name": "Dot"}], "deleted": ["I14:8;14:6", "I14:8;14:7"]})
+
+    def test_unplanned_swap_fails_on_the_main_component_and_the_rebuilt_sublayers(self):
+        found = kinds(build("cmd_comp_swap_back"))
+        self.assertIn(("unplanned-field", ["fill", "other:componentProperties", "other:mainComponentId"]), found)
+        self.assertTrue({"created-names", "created-without-prefix", "over-maxCreatedNodes", "unplanned-delete"} <= {k for k, _ in found})
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_masterComponent_alias_is_not_recorded(self):
+        a = snapshot_node({"type": "INSTANCE", "__main": "1:10", "masterComponent": {"id": "1:10"}})
+        b = snapshot_node({"type": "INSTANCE", "__main": "1:11", "masterComponent": {"id": "1:11"}})
+        self.assertNotIn("masterComponent", a)
+        self.assertEqual(connector.changed_groups(a, b), ["other:mainComponentId"])
+        self.assertFalse(any("masterComponent" in n for n in load("cmd_comp_swap_back", "after.json")["nodes"]))
+
+    def test_old_capture_failed_a_planned_swap_only_on_masterComponent(self):
+        # Real past mistake: the A -> B capture, judged with the swap plan. Before this fix it also
+        # failed on created-names, created-without-prefix, over-maxCreatedNodes and two unplanned deletes.
+        self.assertEqual(kinds(build_planned("cmd_comp_swap_old_snapshot")), [("unplanned-field", ["other:masterComponent"])])
+
+
+class HiddenInstanceLayerTest(unittest.TestCase):
+    """Live v3 snapshots from a scratch file (2026-11-25): boolean property Show Dot on instance 14:8 set to false (with the old and the fixed snippet), then back to true."""
+
+    def test_old_snippet_read_a_hidden_layer_as_a_delete(self):
+        # Real past mistake: use_figma's skipInvisibleInstanceChildren hid the Dot from the walk.
+        run = "cmd_comp_hide_layer"
+        out = connector.build_result(load(run, "command.planned.json"), load(run, "before.json"), load(run, "after.old-snippet.json"))
+        self.assertEqual(kinds(out), [("unplanned-delete", None)])
+        fixed = build_planned(run)
+        self.assertNotIn("unplanned-delete", {k for k, _ in kinds(fixed)})
+        self.assertEqual(fixed["verification"]["fieldChanges"]["I14:8;14:4"], ["geometry", "visibility"])
+
+    def test_showing_the_layer_passes_planned_and_fails_unplanned(self):
+        run = "cmd_comp_show_layer"
+        self.assertTrue(build_planned(run, reported=connector.reported_ids(load(run, "returned.json")))["ok"])
+        self.assertEqual(kinds(build(run)), [("unplanned-field", ["other:componentProperties"]), ("unplanned-field", ["visibility"])])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_snapshot_walks_hidden_instance_children_and_restores_the_flag(self):
+        tree = [{"id": "5:1", "type": "INSTANCE", "__main": "1:1", "children": [{"id": "I5:1;1:2", "type": "TEXT", "characters": "x"}, {"id": "I5:1;1:3", "type": "RECTANGLE", "visible": False}]}]
+        got = snapshot_tree(tree)
+        self.assertEqual([n["id"] for n in got["out"]["nodes"]], ["5:1", "I5:1;1:2", "I5:1;1:3"])
+        self.assertIs(got["skipInvisibleAfter"], True)
+
+
+def card_tree(cards):
+    kids = []
+    for i in range(cards):
+        kids.append({"id": f"7:{i}", "name": f"Card {i}", "type": "FRAME", "opacity": 0.5 if i == 3 else 1, "children": [
+            {"id": f"7:{i}:t", "name": "Title", "type": "TEXT", "characters": f"Card {i}", "fontSize": 13, **({} if i == 5 else {"hyperlink": None})},
+            {"id": f"7:{i}:r", "name": "Swatch", "type": "RECTANGLE", "fills": [{"type": "SOLID", "color": {"r": i % 2, "g": 0, "b": 0}}]}]})
+    return [{"id": "7:grid", "name": "grid", "type": "FRAME", "layoutWrap": "WRAP", "children": kids}]
+
+
+class PagedSnapshotTest(unittest.TestCase):
+    """use_figma refuses a return value over 48,000 bytes; a live 498-node v3 snapshot was 1,197,957 bytes (2026-11-25)."""
+
+    def pages(self, tree, **args):
+        first = snapshot_tree(tree, **args)["out"]
+        rest = [snapshot_tree(tree, page=p, **args)["out"] for p in range(1, first["pages"])]
+        tmp = Path(tempfile.mkdtemp())
+        paths = []
+        for d in [first, *rest]:
+            paths.append(tmp / f"p{d['page']}.json")
+            paths[-1].write_text(json.dumps(d))
+        return paths
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_pages_merge_back_to_every_node_exactly(self):
+        tree = card_tree(12)
+        full = json.loads(json.dumps(snapshot_tree(tree, capture_full=True)["full"]))
+        paths = self.pages(tree, pageBytes=600)
+        self.assertGreater(len(paths), 2)
+        merged = connector.load_snapshot(*paths)
+        self.assertEqual(merged["nodes"], full)
+        self.assertNotIn("hyperlink", next(n for n in merged["nodes"] if n["id"] == "7:5:t"))
+        self.assertEqual(next(n for n in merged["nodes"] if n["id"] == "7:3")["opacity"], 0.5)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_every_page_fits_the_use_figma_return_limit(self):
+        tree = card_tree(150)
+        self.assertGreater(len(json.dumps(snapshot_tree(tree, capture_full=True)["full"])), 48000)
+        for p in self.pages(tree):
+            self.assertLess(len(p.read_text()), 48000, p.name)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_incomplete_or_mixed_pages_are_refused(self):
+        paths = self.pages(card_tree(12), pageBytes=600)
+        for case, files, message in (("one page", paths[:1], "page 0 of"), ("missing page", paths[:-1], "pass every page"),
+                                     ("duplicate page", [*paths[:-1], paths[0]], "pass every page")):
+            with self.subTest(case):
+                proc = run_cli("ingest", *files, "-o", Path(tempfile.mkdtemp(), "out.json"))
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn(message, proc.stderr)
+        other = json.loads(paths[1].read_text())
+        paths[1].write_text(json.dumps(dict(other, snapshotDigest="00000000")))
+        proc = run_cli("ingest", *paths, "-o", Path(tempfile.mkdtemp(), "out.json"))
+        self.assertIn("come from different snapshots", proc.stderr)
+
+    def test_live_500_node_edit_is_judged_from_pages(self):
+        run = RUNS / "cmd_speed_500_edit"
+        before = connector.load_snapshot(*sorted(run.glob("before.page*.json")))
+        after = connector.load_snapshot(*sorted(run.glob("after.page*.json")))
+        self.assertEqual(len(after["nodes"]), 498)
+        planned = connector.build_result(load("cmd_speed_500_edit", "command.planned.json"), before, after, reported=connector.reported_ids(load("cmd_speed_500_edit", "returned.json")))
+        self.assertTrue(planned["ok"], planned["verification"])
+        unplanned = connector.build_result(load("cmd_speed_500_edit", "command.json"), before, after)
+        self.assertEqual(kinds(unplanned), [("unplanned-field", ["other:opacity"])])
+
+
+class InstanceOverrideReadbackTest(unittest.TestCase):
+    """Live v3 snapshots from a scratch file (2026-11-25): text property Label on instance 14:8 set to a longer string, which also moves the Dot sublayer."""
+
+    def test_planned_override_passes(self):
+        run = "cmd_comp_override"
+        self.assertTrue(build_planned(run, reported=connector.reported_ids(load(run, "returned.json")))["ok"])
+
+    def test_unplanned_override_fails_on_the_property_and_the_text(self):
+        self.assertEqual(kinds(build("cmd_comp_override")), [("unplanned-field", ["other:componentProperties"]), ("unplanned-field", ["characters"])])
+
+    def test_the_moved_sibling_must_be_planned_too(self):
+        run = "cmd_comp_override"
+        out = connector.build_result(load(run, "command.sibling-unplanned.json"), load(run, "before.json"), load(run, "after.json"))
+        self.assertEqual([(u["kind"], u["id"]) for u in out["verification"]["unexpectedChanges"]], [("unplanned-update", "I14:8;14:4")])
 
 
 def run_cli(*args):
@@ -246,15 +482,15 @@ class IngestTest(unittest.TestCase):
     def test_wrapped_snapshot_becomes_the_plain_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp, "after.json")
-            proc = run_cli("ingest", RUNS / "cmd_style_fill" / "after.wrapped.txt", "-o", out)
+            proc = run_cli("ingest", RUNS / "cmd_full_constraints" / "after.wrapped.txt", "-o", out)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertEqual(json.loads(out.read_text()), load("cmd_style_fill", "after.json"))
+            self.assertEqual(json.loads(out.read_text()), load("cmd_full_constraints", "after.json"))
 
     def test_plain_snapshot_passes_through(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp, "before.json")
-            self.assertEqual(run_cli("ingest", RUNS / "cmd_style_fill" / "before.json", "-o", out).returncode, 0)
-            self.assertEqual(json.loads(out.read_text()), load("cmd_style_fill", "before.json"))
+            self.assertEqual(run_cli("ingest", RUNS / "cmd_full_constraints" / "before.json", "-o", out).returncode, 0)
+            self.assertEqual(json.loads(out.read_text()), load("cmd_full_constraints", "before.json"))
 
     def test_wrapped_return_value(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -262,18 +498,19 @@ class IngestTest(unittest.TestCase):
             self.assertEqual(run_cli("ingest", "--returned", RUNS / "cmd_style_fill" / "dry-run" / "returned.wrapped.txt", "-o", out).returncode, 0)
             self.assertEqual(json.loads(out.read_text())["plan"]["fills"], ["#B00020"])
 
-    def test_v1_snapshot_is_refused(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            v1 = Path(tmp, "v1.json")
-            v1.write_text(json.dumps(dict(load("cmd_style_fill", "before.json"), schemaVersion="figma-sink-snapshot/v1")))
-            proc = run_cli("ingest", v1, "-o", Path(tmp, "out.json"))
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("no font, fill, stroke or text-style fields", proc.stderr)
+    def test_allowlist_snapshots_are_refused(self):
+        for old in ("figma-sink-snapshot/v1", "figma-sink-snapshot/v2"):
+            with self.subTest(old), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp, "old.json")
+                path.write_text(json.dumps(dict(load("cmd_style_fill", "before.json"), schemaVersion=old)))
+                proc = run_cli("ingest", path, "-o", Path(tmp, "out.json"))
+                self.assertEqual(proc.returncode, 1)
+                self.assertIn("hand-picked field list and misses opacity, rotation, blend mode, constraints", proc.stderr)
 
     def test_result_reads_a_wrapped_after_snapshot_directly(self):
         with tempfile.TemporaryDirectory() as tmp:
-            proc = run_cli("result", "--command", RUNS / "cmd_style_fill" / "command.planned.json", "--before", RUNS / "cmd_style_fill" / "before.json",
-                           "--after", RUNS / "cmd_style_fill" / "after.wrapped.txt", "--reported", RUNS / "cmd_style_fill" / "returned.wrapped.txt", "-o", Path(tmp, "result.json"))
+            proc = run_cli("result", "--command", RUNS / "cmd_full_constraints" / "command.planned.json", "--before", RUNS / "cmd_full_constraints" / "before.json",
+                           "--after", RUNS / "cmd_full_constraints" / "after.wrapped.txt", "--reported", RUNS / "cmd_full_constraints" / "returned.json", "-o", Path(tmp, "result.json"))
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 

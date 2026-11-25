@@ -14,7 +14,7 @@ import check
 READ_ONLY_COMMAND = {"dryRun": True, "guards": {"allowMutation": False}}
 FUNCTION_SNIPPET_RE = re.compile(r"^\s*async\s*\(\s*(\{[^)]*\}|\w+)?\s*\)\s*=>")
 SNAPSHOT_SCHEMA, FIELD_GROUPS, EXPLICIT_GROUPS = check.SNAPSHOT_SCHEMA, check.FIELD_GROUPS, check.EXPLICIT_GROUPS
-GROUP_OF = {field: group for group, fields in FIELD_GROUPS.items() for field in fields}
+NOT_PROPERTIES = {"id", "segments", "segmentsTruncated"}
 
 
 def fail(message, code=1):
@@ -126,12 +126,57 @@ def is_snapshot(value):
     return str(value.get("schemaVersion", "")).startswith("figma-sink-snapshot/") and isinstance(value.get("nodes"), list)
 
 
-def load_snapshot(path):
+PAGES_TRANSPORT = "figma-sink-pages/v1"
+PAGE_KEYS = ("transport", "snapshotDigest", "page", "pages", "total", "defaults")
+
+
+def unpack(data, defaults):
+    def node(n):
+        full = dict(defaults.get(n.get("type"), {}))
+        for k in n.get("__absent__") or []:
+            full.pop(k, None)
+        full.update({k: v for k, v in n.items() if k != "__absent__"})
+        return full
+    out = {k: v for k, v in data.items() if k not in PAGE_KEYS}
+    out["snapshotDigest"] = data["snapshotDigest"]
+    out["nodes"] = [node(n) for n in data["nodes"]]
+    return out
+
+
+def merge_pages(paths, datas):
+    head = datas[0]
+    for path, d in zip(paths, datas):
+        for key in ("snapshotDigest", "pages", "total", "rootId"):
+            if d.get(key) != head.get(key):
+                fail(f"{path} has {key}={d.get(key)!r} but {paths[0]} has {head.get(key)!r}; the pages come from different snapshots (the canvas changed between page calls, or a page of another run was mixed in). Snapshot every page again.")
+    seen = sorted(d.get("page") for d in datas)
+    if seen != list(range(head["pages"])):
+        fail(f"got pages {seen} of {head['pages']}; pass every page (0..{head['pages'] - 1}) exactly once.")
+    datas = sorted(datas, key=lambda d: d["page"])
+    nodes = [n for d in datas for n in d["nodes"]]
+    if len(nodes) != head["total"]:
+        fail(f"the pages hold {len(nodes)} nodes but the snapshot had {head['total']}.")
+    return unpack(dict(head, nodes=nodes), datas[0].get("defaults") or {})
+
+
+def load_snapshot(path, *more):
+    paths = [path, *more]
+    datas = [load_snapshot_page(p) for p in paths]
+    if datas[0].get("transport") != PAGES_TRANSPORT:
+        if more:
+            fail(f"{path} is a whole snapshot; pass it alone.")
+        return datas[0]
+    if len(paths) == 1 and datas[0]["pages"] != 1:
+        fail(f"{path} is page {datas[0]['page']} of {datas[0]['pages']}; run snippets/snapshot.js once per page (`page` 0..{datas[0]['pages'] - 1}) and `connector.py ingest` every page file together into one snapshot.")
+    return merge_pages(paths, datas)
+
+
+def load_snapshot_page(path):
     data = unwrap(path, is_snapshot)
     if data is None:
         fail(f"{path} holds no snippets/snapshot.js result ({SNAPSHOT_SCHEMA}), plain or wrapped by use_figma write_to_file.")
     if data["schemaVersion"] != SNAPSHOT_SCHEMA:
-        fail(f"{path} is {data['schemaVersion']}, which has no font, fill, stroke or text-style fields; re-run the current snippets/snapshot.js (a stale copy in a run folder is the usual cause).")
+        fail(f"{path} is {data['schemaVersion']}, which records a hand-picked field list and misses opacity, rotation, blend mode, constraints and any property Figma adds; re-run the current snippets/snapshot.js ({SNAPSHOT_SCHEMA}; a stale copy in a run folder is the usual cause).")
     missing = [g for g in FIELD_GROUPS if g not in (data.get("readGroups") or [])]
     if missing:
         fail(f"{path} did not read {', '.join(missing)}; it came from an older snippets/snapshot.js. Re-run the current one (a stale copy in a run folder is the usual cause).")
@@ -140,11 +185,13 @@ def load_snapshot(path):
 
 def ingest(args):
     if args.returned:
-        data = unwrap(args.input, lambda v: True)
+        if len(args.input) != 1:
+            fail("--returned reads one file.")
+        data = unwrap(args.input[0], lambda v: True)
         if data is None:
-            fail(f"{args.input} holds no JSON object.")
+            fail(f"{args.input[0]} holds no JSON object.")
     else:
-        data = load_snapshot(args.input)
+        data = load_snapshot(*args.input)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     label = "returned value" if args.returned else f"{data['schemaVersion']} with {len(data['nodes'])} nodes"
@@ -161,11 +208,11 @@ def runs(segments, key, ranges):
 
 
 def changed_groups(old, new):
-    groups = {GROUP_OF[k] for k in GROUP_OF if old.get(k) != new.get(k)}
+    groups = {check.group_of(k) for k in (old.keys() | new.keys()) - NOT_PROPERTIES if old.get(k) != new.get(k)}
     if old.get("segments") != new.get("segments") or old.get("segmentsTruncated") != new.get("segmentsTruncated"):
         ranges = old.get("characters") == new.get("characters")
         keys = {k for s in (old.get("segments") or []) + (new.get("segments") or []) for k in s} - {"start", "end"}
-        groups |= {GROUP_OF.get(k, "font") for k in keys if runs(old.get("segments"), k, ranges) != runs(new.get("segments"), k, ranges)}
+        groups |= {check.group_of(k) for k in keys if runs(old.get("segments"), k, ranges) != runs(new.get("segments"), k, ranges)}
         if old.get("segmentsTruncated") != new.get("segmentsTruncated"):
             groups.add("font")
     return sorted(groups)
@@ -182,16 +229,23 @@ def build_result(command, before, after, reported=None, run_dir=None, artifacts=
         fail(f"before ({before['rootId']}) and after ({after['rootId']}) snapshots cover different roots.")
     b = {n["id"]: n for n in before["nodes"]}
     a = {n["id"]: n for n in after["nodes"]}
-    created = [a[i] for i in a if i not in b]
-    deleted = [i for i in b if i not in a]
-    groups = {i: changed_groups(b[i], a[i]) for i in a if i in b}
-    updated = [i for i in a if groups.get(i)]
     expected = command.get("expectedChanges") or {}
     planned_props = expected.get("mutatedProperties") or {}
+    planned_update = list(expected.get("mutatedNodeIds") or [])
+    # A swap rebuilds the instance's sublayers under new ids (I<instance>;<main child>). For a swap
+    # planned as other:mainComponentId those come and go with the instance, not as creates or deletes.
+    swapped = [i for i in a if i in b and a[i].get("mainComponentId") != b[i].get("mainComponentId")
+               and i in planned_update and "other:mainComponentId" in (planned_props.get(i) or [])]
+    sublayer = tuple((i if i.startswith("I") else "I" + i) + ";" for i in swapped)
+    is_sublayer = lambda node_id: bool(sublayer) and node_id.startswith(sublayer)
+    created = [a[i] for i in a if i not in b and not is_sublayer(i)]
+    deleted = [i for i in b if i not in a and not is_sublayer(i)]
+    sublayers = {"created": [{"id": i, "name": a[i]["name"]} for i in a if i not in b and is_sublayer(i)], "deleted": [i for i in b if i not in a and is_sublayer(i)]}
+    groups = {i: changed_groups(b[i], a[i]) for i in a if i in b}
+    updated = [i for i in a if groups.get(i)]
     guards = command.get("guards") or {}
     prefix = guards.get("generatedPrefix") or ""
     planned_names = list(expected.get("createdNames") or [])
-    planned_update = list(expected.get("mutatedNodeIds") or [])
     planned_delete = [check.entry_id(e) for e in ((command.get("args") or {}).get("delete") or [])]
     dry = command.get("dryRun") is not False
     unexpected = []
@@ -208,7 +262,7 @@ def build_result(command, before, after, reported=None, run_dir=None, artifacts=
             unexpected.append({"kind": "unplanned-update", "id": i, "fields": groups[i]})
             continue
         allowed = planned_props.get(i)
-        extra = [g for g in groups[i] if (g not in allowed if isinstance(allowed, list) else g in EXPLICIT_GROUPS)]
+        extra = [g for g in groups[i] if (g not in allowed if isinstance(allowed, list) else check.is_explicit_group(g))]
         if extra:
             unexpected.append({"kind": "unplanned-field", "id": i, "fields": extra, "planned": allowed if isinstance(allowed, list) else f"any group except {', '.join(EXPLICIT_GROUPS)} (list those in expectedChanges.mutatedProperties)"})
     def under_planned_delete(node_id):
@@ -222,7 +276,7 @@ def build_result(command, before, after, reported=None, run_dir=None, artifacts=
     if isinstance(reported, list):
         reported = {"created": reported}
     if reported is not None:
-        reported_ids = set(reported.get("created") or [])
+        reported_ids = {i for i in reported.get("created") or [] if not is_sublayer(i)}
         if reported_ids != created_ids:
             unexpected.append({"kind": "report-differs-from-readback", "field": "created", "reported": sorted(reported_ids), "readback": sorted(created_ids)})
         if reported.get("updated") is not None:
@@ -242,7 +296,7 @@ def build_result(command, before, after, reported=None, run_dir=None, artifacts=
                     node_id = b[node_id].get("parentId")
                 return False
             missed = [i for i in deleted if not under_reported(i)]
-            phantom = sorted(said - set(deleted))
+            phantom = sorted(said - set(deleted) - set(sublayers["deleted"]))
             if missed:
                 unexpected.append({"kind": "report-missed-change", "field": "deleted", "ids": missed})
             if phantom:
@@ -256,7 +310,7 @@ def build_result(command, before, after, reported=None, run_dir=None, artifacts=
         "ok": ok,
         "status": ("dry-run" if dry else "passed") if ok else ("dry_run_violation" if dry and changed else "failed"),
         "plan": {"create": planned_names, "update": planned_update, "delete": planned_delete, "reparent": []},
-        "changes": {"created": [{"id": n["id"], "name": n["name"]} for n in created], "updated": updated, "deleted": [i for i in deleted if i in planned_delete or not under_planned_delete(i)], "reparented": [], "selection": []},
+        "changes": {"created": [{"id": n["id"], "name": n["name"]} for n in created], "updated": updated, "deleted": [i for i in deleted if i in planned_delete or not under_planned_delete(i)], "reparented": [], "selection": [], "swappedInstanceSublayers": sublayers},
         "verification": {"ok": ok, "source": "snapshot-diff", "snapshotSchema": after["schemaVersion"], "rootId": after["rootId"], "fieldChanges": {i: groups[i] for i in updated}, "unexpectedChanges": unexpected},
         "artifacts": [],
         "warnings": [{"kind": "stale-layer-name", "id": i, "name": a[i]["name"], "characters": a[i].get("characters")} for i in updated if stale_layer_name(b[i], a[i])],
@@ -323,8 +377,8 @@ def main(argv=None):
     s.add_argument("--artifact", action="append")
     s.add_argument("-o", "--out", required=True)
     s.set_defaults(func=result_cmd)
-    g = sub.add_parser("ingest", help="unwrap a use_figma write_to_file result into plain JSON (a snapshot by default)")
-    g.add_argument("input")
+    g = sub.add_parser("ingest", help="unwrap use_figma write_to_file results into plain JSON (a snapshot by default; pages are merged)")
+    g.add_argument("input", nargs="+", help="one snapshot file, or every page file of a paged snapshot")
     g.add_argument("--returned", action="store_true", help="unwrap use_figma's return value (returned.json) instead of a snapshot")
     g.add_argument("-o", "--out", required=True)
     g.set_defaults(func=ingest)
