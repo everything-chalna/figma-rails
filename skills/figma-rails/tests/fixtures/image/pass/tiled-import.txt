@@ -1,0 +1,5 @@
+# full-page reference split into bands under 4096 px
+import 1440x4096 band-1
+import 1440x1705 band-2
+export 1440x900 @2 hero-reference
+export 1440x5801 @1 full-page-reference

@@ -1,0 +1,6 @@
+{
+  "expression": "(async () => { const n = await figma.getNodeByIdAsync('712:538'); const bytes = await n.exportAsync({format: 'PNG'}); return stageExport('run1', 'hero', bytes); })()",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}

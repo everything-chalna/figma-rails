@@ -1,0 +1,11 @@
+{
+  "id": 1,
+  "method": "Runtime.evaluate",
+  "params": {
+    "expression": "(async () => ({ page: figma.currentPage.name, selection: figma.currentPage.selection.map((n) => n.id) }))()",
+    "contextId": 1,
+    "includeCommandLineAPI": true,
+    "awaitPromise": true,
+    "returnByValue": true
+  }
+}

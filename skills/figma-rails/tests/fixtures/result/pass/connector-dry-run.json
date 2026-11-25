@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "figma-cli-result/v1",
+  "commandId": "cmd_create_dry",
+  "transport": "figma-mcp-use-figma",
+  "ok": true,
+  "status": "dry-run",
+  "plan": {
+    "create": [
+      "__figma_sink__ connector test card",
+      "Title",
+      "Body"
+    ],
+    "update": [],
+    "delete": [],
+    "reparent": []
+  },
+  "changes": {
+    "created": [],
+    "updated": [],
+    "deleted": [],
+    "reparented": [],
+    "selection": []
+  },
+  "verification": {
+    "ok": true,
+    "source": "snapshot-diff",
+    "rootId": "0:1",
+    "unexpectedChanges": []
+  },
+  "artifacts": [
+    {
+      "type": "json",
+      "path": "runs/cmd_create_dry/after.json",
+      "sha256": "4664e5fdf4bf1505bf353ba0b407d660b75ba62d288d67827a07b6df62d07fe7"
+    }
+  ],
+  "warnings": [],
+  "retryable": false,
+  "errorCode": null,
+  "error": null
+}

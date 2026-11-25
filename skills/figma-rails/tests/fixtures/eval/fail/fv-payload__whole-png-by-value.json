@@ -1,0 +1,6 @@
+{
+  "expression": "(async () => { const n = await figma.getNodeByIdAsync('712:538'); return Array.from(await n.exportAsync({format: 'PNG', constraint: {type: 'SCALE', value: 2}})); })()",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "figma-cli-result/v1",
+  "commandId": "cmd_edit_body",
+  "transport": "figma-mcp-use-figma",
+  "ok": false,
+  "status": "failed",
+  "plan": {
+    "create": [],
+    "update": [
+      "2:4"
+    ],
+    "delete": [],
+    "reparent": []
+  },
+  "changes": {
+    "created": [],
+    "updated": [
+      "2:2",
+      "2:4"
+    ],
+    "deleted": [],
+    "reparented": [],
+    "selection": []
+  },
+  "verification": {
+    "ok": false,
+    "source": "snapshot-diff",
+    "rootId": "0:1",
+    "unexpectedChanges": [
+      {
+        "kind": "unplanned-update",
+        "id": "2:2"
+      }
+    ]
+  },
+  "artifacts": [],
+  "warnings": [],
+  "retryable": false,
+  "errorCode": "verification_failed",
+  "error": null
+}

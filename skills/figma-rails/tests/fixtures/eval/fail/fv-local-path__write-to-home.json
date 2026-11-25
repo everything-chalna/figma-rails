@@ -1,0 +1,6 @@
+{
+  "expression": "(async () => ({ out: '/Users/me/figma/hero.png', page: figma.currentPage.name }))()",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}

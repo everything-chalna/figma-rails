@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "figma-cli-result/v1",
+  "commandId": "cmd_20260513_002",
+  "ok": true,
+  "status": "passed",
+  "plan": {
+    "create": [],
+    "update": [],
+    "delete": [
+      "900:1",
+      "900:2"
+    ],
+    "reparent": []
+  },
+  "changes": {
+    "created": [],
+    "updated": [],
+    "deleted": [
+      "900:1",
+      "900:2"
+    ],
+    "reparented": [],
+    "selection": []
+  },
+  "artifacts": [
+    {
+      "type": "json",
+      "path": "runs/cmd_20260513_002/after.json",
+      "sha256": "3c65ea93424a9c362fec0e3a69ea36031e8a358441479dd665cc6110eabe7b08"
+    }
+  ],
+  "warnings": [],
+  "retryable": false,
+  "errorCode": null,
+  "error": null
+}

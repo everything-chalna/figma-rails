@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "transport": "figma-mcp-use-figma",
+  "command": "create-test-card",
+  "target": {
+    "fileKey": "AbCdEfGhIjKlMnOpQrStUv",
+    "pageId": "0:1",
+    "nodeId": "0:1",
+    "rootNodeId": "0:1"
+  },
+  "skillNames": "figma-use,figma-generate-design",
+  "args": {},
+  "expectedChanges": {
+    "mutatedNodeIds": [],
+    "createdNames": [
+      "__figma_sink__ connector test card",
+      "Title",
+      "Body"
+    ]
+  },
+  "timeoutMs": 30000,
+  "guards": {
+    "allowMutation": true,
+    "allowedNodeIds": [],
+    "allowedParentIds": [
+      "0:1"
+    ],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 3,
+    "maxDeletedNodes": 0,
+    "maxUpdatedNodes": 0
+  },
+  "steps": [
+    "snapshot-before",
+    "revalidate-target",
+    "apply",
+    "snapshot-after",
+    "compare-plan"
+  ],
+  "commandId": "cmd_create_live",
+  "script": "runs/cmd_create_live/create.js",
+  "dryRun": false
+}

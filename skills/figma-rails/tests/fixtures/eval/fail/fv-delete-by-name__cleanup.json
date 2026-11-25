@@ -1,0 +1,6 @@
+{
+  "expression": "(async () => { const dryRun = false; if (dryRun) return; figma.currentPage.findAll((n) => n.name === 'Generated card').forEach((n) => n.remove()); })()",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}

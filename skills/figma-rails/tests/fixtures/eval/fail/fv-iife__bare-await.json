@@ -1,0 +1,6 @@
+{
+  "expression": "await figma.getNodeByIdAsync('712:538')",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}

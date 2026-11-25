@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "figma-sink-audit/v1",
+  "mode": "webpage",
+  "root": {
+    "id": "1:1",
+    "name": "Editable webpage clone",
+    "type": "FRAME",
+    "locked": false,
+    "x": 0,
+    "y": 0,
+    "width": 1440,
+    "height": 1400
+  }
+}

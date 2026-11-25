@@ -1,0 +1,6 @@
+{
+  "expression": "(() => [...document.querySelectorAll('[data-testid=layer-row]')].map((e) => e.innerText))()",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}

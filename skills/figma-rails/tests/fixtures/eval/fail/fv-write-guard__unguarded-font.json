@@ -1,0 +1,6 @@
+{
+  "expression": "(async () => { for (const t of figma.currentPage.findAll((n) => n.type === 'TEXT')) { await figma.loadFontAsync(t.fontName); t.fontName = {family: 'Pretendard', style: 'Regular'}; } })()",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}

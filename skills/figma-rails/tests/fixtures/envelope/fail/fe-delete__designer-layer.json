@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "commandId": "cmd_20260513_002",
+  "transport": "chrome-cdp-runtime-evaluate",
+  "command": "cleanup-generated",
+  "target": {
+    "fileKey": "AbCdEfGh123456",
+    "pageId": "0:1",
+    "nodeId": "712:538",
+    "rootNodeId": "712:538"
+  },
+  "script": "deleteGeneratedNodes",
+  "args": {
+    "delete": [
+      {
+        "id": "12:34",
+        "name": "Hero"
+      }
+    ]
+  },
+  "expectedChanges": {
+    "mutatedNodeIds": [
+      "900:1",
+      "900:2"
+    ]
+  },
+  "timeoutMs": 30000,
+  "dryRun": false,
+  "guards": {
+    "allowMutation": true,
+    "allowedNodeIds": [],
+    "allowedParentIds": [
+      "712:538"
+    ],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 0,
+    "maxDeletedNodes": 2,
+    "maxUpdatedNodes": 0
+  },
+  "idempotencyKey": "select-node:AbCdEfGh123456:712:538",
+  "steps": [
+    "snapshot-before",
+    "revalidate-target",
+    "apply",
+    "snapshot-after",
+    "compare-plan"
+  ]
+}

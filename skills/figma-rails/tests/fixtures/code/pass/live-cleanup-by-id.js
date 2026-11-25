@@ -1,0 +1,10 @@
+const command = {"schemaVersion": "figma-cli-command/v1", "transport": "figma-mcp-use-figma", "command": "cleanup-generated", "target": {"fileKey": "AbCdEfGhIjKlMnOpQrStUv", "pageId": "0:1", "nodeId": "0:1", "rootNodeId": "0:1"}, "skillNames": "figma-use", "sessionId": "00000000-0000-4000-8000-000000000000", "args": {"delete": [{"id": "2:2", "name": "__figma_sink__ connector test card"}]}, "expectedChanges": {"mutatedNodeIds": ["2:2"], "createdNames": []}, "timeoutMs": 30000, "guards": {"allowMutation": true, "allowedNodeIds": ["2:2"], "allowedParentIds": ["0:1"], "generatedPrefix": "__figma_sink__", "requireGeneratedPrefixForDelete": true, "requireExplicitIdsForDelete": true, "maxCreatedNodes": 0, "maxDeletedNodes": 1, "maxUpdatedNodes": 0}, "steps": ["snapshot-before", "revalidate-target", "apply", "snapshot-after", "compare-plan"], "commandId": "cmd_cleanup", "script": "runs/cmd_cleanup/cleanup.js", "dryRun": false};
+const args = {};
+const ids = command.args.delete.map((d) => d.id);
+if (command.dryRun !== false || command.guards.allowMutation !== true) return { dryRun: true, plan: { delete: ids } };
+const nodes = await Promise.all(ids.map((id) => figma.getNodeByIdAsync(id)));
+const bad = nodes.map((n, i) => (!n || !n.name.startsWith(command.guards.generatedPrefix) ? ids[i] : null)).filter(Boolean);
+if (bad.length) throw new Error("refusing to delete ids that are missing or not generated: " + bad.join(","));
+for (const id of ids) $fig.get(id).remove();
+await $fig.done();
+return { deletedNodeIds: ids };

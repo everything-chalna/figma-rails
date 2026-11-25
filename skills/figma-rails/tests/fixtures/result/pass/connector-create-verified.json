@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "figma-cli-result/v1",
+  "commandId": "cmd_create_live",
+  "transport": "figma-mcp-use-figma",
+  "ok": true,
+  "status": "passed",
+  "plan": {
+    "create": [
+      "__figma_sink__ connector test card",
+      "Title",
+      "Body"
+    ],
+    "update": [],
+    "delete": [],
+    "reparent": []
+  },
+  "changes": {
+    "created": [
+      {
+        "id": "2:2",
+        "name": "__figma_sink__ connector test card"
+      },
+      {
+        "id": "2:3",
+        "name": "Title"
+      },
+      {
+        "id": "2:4",
+        "name": "Body"
+      }
+    ],
+    "updated": [],
+    "deleted": [],
+    "reparented": [],
+    "selection": []
+  },
+  "verification": {
+    "ok": true,
+    "source": "snapshot-diff",
+    "rootId": "0:1",
+    "unexpectedChanges": []
+  },
+  "artifacts": [
+    {
+      "type": "json",
+      "path": "runs/cmd_create_live/after.json",
+      "sha256": "fb16deb9396054da45ba5db652014417961f9f307c04339f4df82a96e47503e1"
+    },
+    {
+      "type": "png",
+      "path": "runs/cmd_create_live/shot.png",
+      "sha256": "4d1ff588f567cccd5ab01e0548e67b1288b3cda67c07598160ba8cc3515887d6"
+    }
+  ],
+  "warnings": [],
+  "retryable": false,
+  "errorCode": null,
+  "error": null
+}

@@ -1,0 +1,1 @@
+{"expression": "(async () => figma.currentPage.name)()", "includeCommandLineAPI": true, "awaitPromise": true, "timeout": NaN}

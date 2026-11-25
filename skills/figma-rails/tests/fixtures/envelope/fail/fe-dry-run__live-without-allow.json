@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "commandId": "cmd_20260513_001",
+  "transport": "chrome-cdp-runtime-evaluate",
+  "command": "apply-font",
+  "target": {
+    "fileKey": "AbCdEfGh123456",
+    "pageId": "0:1",
+    "nodeId": "712:538",
+    "rootNodeId": "712:538"
+  },
+  "script": "applyFont",
+  "args": {
+    "scrollIntoView": true
+  },
+  "expectedChanges": {
+    "selection": [
+      "712:538"
+    ],
+    "mutatedNodeIds": []
+  },
+  "timeoutMs": 30000,
+  "dryRun": false,
+  "guards": {
+    "allowMutation": false,
+    "allowedNodeIds": [
+      "712:538"
+    ],
+    "allowedParentIds": [],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 0,
+    "maxDeletedNodes": 0
+  },
+  "idempotencyKey": "select-node:AbCdEfGh123456:712:538"
+}

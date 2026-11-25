@@ -1,0 +1,6 @@
+{
+  "expression": "(async () => { const command = {dryRun: true}; const node = await figma.getNodeByIdAsync('712:538'); if (command.dryRun !== false) return {plan: [{id: node.id}]}; node.name = '__figma_sink__ title'; return {ok: true}; })()",
+  "includeCommandLineAPI": true,
+  "awaitPromise": true,
+  "returnByValue": true
+}
