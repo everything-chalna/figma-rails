@@ -14,7 +14,7 @@ Figma Rails is not an MCP server, a packaged CLI, or a Figma plugin. The working
 
 From the repository root, with the Figma connector signed in:
 
-1. Write a `figma-cli-command/v1` envelope. Set `"transport": "figma-mcp-use-figma"`, the file key, the `create_session` id, and `skillNames` (`figma-use`, plus `figma-generate-design` for any live write). `dryRun` defaults to true. List each node you will change in `expectedChanges.mutatedNodeIds`, and its field groups in `expectedChanges.mutatedProperties` (for example `{"12:3": ["characters", "font"]}`).
+1. Write a `figma-cli-command/v1` envelope. Set `"transport": "figma-mcp-use-figma"`, the file key, the `create_session` id, and `skillNames` (`figma-use`, plus `figma-generate-design` for any live write). `dryRun` defaults to true. List each node you will change in `expectedChanges.mutatedNodeIds`, and its field groups in `expectedChanges.mutatedProperties` (for example `{"12:3": ["characters", "font"]}`, or `{"12:3": ["other:opacity"]}` for a property outside the named groups).
 2. Lint the envelope, then render the snippet. Rendering refuses to write a file that fails the `code` rules.
 
 ```sh
@@ -24,7 +24,7 @@ python3 skills/figma-rails/connector.py render skills/figma-rails/snippets/snaps
 ```
 
 3. Dry-run first: render the `dryRun: true` envelope to `runs/<commandId>/dry-run/<name>.js` and send it. The live render goes to `runs/<commandId>/<name>.js`, keeps the dry-run files, and refuses an envelope that plans anything the dry run did not.
-4. Send the rendered file unchanged as `use_figma` code. Snapshot the same scope before and after. `connector.py result` diffs those snapshots into a `figma-cli-result/v1` and fails on any create, update, or delete the envelope did not plan, including a parent frame that resized and a font, fill, stroke, text style, effect, corner radius, or auto-layout setting that changed on a node whose plan did not list it. If `use_figma` wrote its result to a file, `connector.py ingest <file> -o before.json` unwraps it; `result` reads wrapped files too.
+4. Send the rendered file unchanged as `use_figma` code. Snapshot the same scope before and after. `connector.py result` diffs those snapshots into a `figma-cli-result/v1` and fails on any create, update, or delete the envelope did not plan, including a parent frame that resized and any property group that changed on a node whose plan did not list it, from a font or fill to opacity or rotation. `use_figma` refuses a return value over 48 KB, so a snapshot of more than a few dozen nodes comes in pages: when the snapshot says `"pages"` above 1, run it again with `"page": 1`, `2` and so on, with no write in between. `connector.py ingest <every page file> -o before.json` unwraps and merges them, and refuses pages from two different canvas states; `result` reads a one-page file, wrapped or plain, directly.
 
 ## Transports
 
@@ -72,8 +72,8 @@ The same rails work for matching a build to a Figma frame, and for rebuilding a 
 
 ## Status
 
-Readback compares geometry, visibility, text, and typography, including mixed ranges. It also compares fills, strokes, text style, effects, corner radius (each corner when mixed), and auto-layout: frame mode, sizing, padding, spacing, alignment, and wrap, plus each child's align, grow, positioning, and sizing.
+Readback records every readable property of every node, not a chosen list. Geometry, text, typography with mixed ranges, fills, strokes, text style, effects, corner radius, and auto-layout map to named field groups. Everything else, such as opacity, blend mode, rotation, constraints, component properties, and the main component of an instance, is compared as `other:<property>` and fails until the plan lists it. A property Figma adds later is compared the same way. An instance swap planned as `other:mainComponentId` covers the sublayers Figma rebuilds under new ids, and hidden layers inside instances are read too. Derived or unstable values, such as the absolute transform, render bounds, and outline geometry, are on an ignore list in `snippets/snapshot.js`, each with a reason. Values over 2,000 characters are compared by digest, and long text by a digest of the full string. Each page call re-reads the whole scope: about 2.4 s for 500 nodes and 6.4 s for 1,500 inside Figma, plus the call itself.
 
-It does not yet compare node opacity or blend, constraints, rotation, component properties, or image pixels. Text longer than 200 characters, and a node with more than 50 segments, are outside the diff too. Check those with a screenshot.
+It does not compare image pixels behind an unchanged image hash, variable values (only which variable is bound), properties that throw when read, or more than 50 text segments per node. Check those with a screenshot.
 
 The skill, lint checker, and runner are in this repository at `skills/figma-rails/`. This repository is MIT licensed.

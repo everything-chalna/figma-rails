@@ -90,23 +90,46 @@ TRANSPORTS = {CDP_TRANSPORT, CONNECTOR_TRANSPORT}
 CONNECTOR_FILE_KEY_RE = re.compile(r"[0-9a-zA-Z]{22,128}")
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 READ_ONLY_COMMANDS = {"probe", "extract", "list-pages", "export", "audit", "select-node", "capture"}
-SNAPSHOT_SCHEMA = "figma-sink-snapshot/v2"
+SNAPSHOT_SCHEMA = "figma-sink-snapshot/v3"
+GRID_LAYOUT = ("gridRowCount", "gridColumnCount", "gridRowGap", "gridColumnGap", "gridRowSizes", "gridColumnSizes", "gridAutoTracks", "gridItemsPositioning", "gridRowSizingCSS", "gridColumnSizingCSS", "gridStyleId",
+               "gridChildHorizontalAlign", "gridChildVerticalAlign", "gridRowAnchorIndex", "gridColumnAnchorIndex", "gridRowSpan", "gridColumnSpan")
 FIELD_GROUPS = {
     "name": ("name",),
-    "structure": ("type", "parentId"),
-    "geometry": ("x", "y", "width", "height"),
+    "structure": ("type", "parentId", "depth", "index"),
+    "geometry": ("x", "y", "width", "height", "relativeTransform"),
     "visibility": ("visible", "locked"),
-    "characters": ("characters",),
-    "font": ("fontName", "fontSize", "lineHeight", "letterSpacing", "textAlignHorizontal", "textAlignVertical"),
+    "characters": ("characters", "charactersDigest", "charactersLength"),
+    "font": ("fontName", "fontSize", "fontStyle", "lineHeight", "letterSpacing", "textAlignHorizontal", "textAlignVertical", "textCase", "textDecoration", "textDecorationStyle", "textDecorationOffset",
+             "textDecorationThickness", "textDecorationColor", "textDecorationSkipInk", "paragraphIndent", "paragraphSpacing", "listSpacing", "listOptions", "indentation", "leadingTrim", "hangingList",
+             "hangingPunctuation", "openTypeFeatures"),
     "fill": ("fills", "fillStyleId"),
-    "stroke": ("strokes", "strokeStyleId", "strokeWeight"),
+    "stroke": ("strokes", "strokeStyleId", "strokeWeight", "strokeTopWeight", "strokeRightWeight", "strokeBottomWeight", "strokeLeftWeight", "strokeAlign", "strokeCap", "strokeJoin", "strokeMiterLimit",
+               "dashPattern", "complexStrokeProperties", "variableWidthStrokeProperties"),
     "textStyle": ("textStyleId",),
     "effect": ("effects", "effectStyleId"),
     "radius": ("cornerRadius", "topLeftRadius", "topRightRadius", "bottomRightRadius", "bottomLeftRadius", "cornerSmoothing"),
     "layout": ("layoutMode", "primaryAxisSizingMode", "counterAxisSizingMode", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "itemSpacing", "counterAxisSpacing", "primaryAxisAlignItems", "counterAxisAlignItems", "layoutWrap",
-               "layoutAlign", "layoutGrow", "layoutPositioning", "layoutSizingHorizontal", "layoutSizingVertical"),
+               "counterAxisAlignContent", "itemReverseZIndex", "strokesIncludedInLayout", "minWidth", "maxWidth", "minHeight", "maxHeight", "textAutoResize",
+               "layoutAlign", "layoutGrow", "layoutPositioning", "layoutSizingHorizontal", "layoutSizingVertical") + GRID_LAYOUT,
+    "other": (),
 }
-EXPLICIT_GROUPS = ("font", "fill", "stroke", "textStyle", "effect", "radius", "layout")
+EXPLICIT_GROUPS = ("font", "fill", "stroke", "textStyle", "effect", "radius", "layout", "other:<property>")
+OTHER_GROUP_RE = re.compile(r"other:[A-Za-z_][A-Za-z0-9_]*")
+GROUP_OF = {field: group for group, fields in FIELD_GROUPS.items() for field in fields}
+
+
+def group_of(prop):
+    return GROUP_OF.get(prop) or f"other:{prop}"
+
+
+def is_plannable_group(group):
+    return (group in FIELD_GROUPS and group != "other") or bool(OTHER_GROUP_RE.fullmatch(group))
+
+
+def is_explicit_group(group):
+    return group in EXPLICIT_GROUPS or group.startswith("other:")
+
+
 FIGMA_DEFAULT_NAMES = {"frame", "group", "rectangle", "text", "vector", "ellipse", "component", "section", "image", "layer"}
 
 
@@ -331,11 +354,11 @@ def envelope(text):
                 found.append(Finding("fe-readback", "expectedChanges.mutatedProperties maps a node id to a list of field groups, e.g. {\"12:3\": [\"characters\", \"font\"]}.", 1))
             else:
                 for node_id, fields in props.items():
-                    unknown = [f for f in fields if f not in FIELD_GROUPS]
+                    unknown = [f for f in fields if not isinstance(f, str) or not is_plannable_group(f)]
                     if node_id not in expected["mutatedNodeIds"]:
                         found.append(Finding("fe-readback", f"mutatedProperties names {node_id}, which is not in expectedChanges.mutatedNodeIds; plan the node first.", 1))
                     if unknown:
-                        found.append(Finding("fe-readback", f"mutatedProperties[{node_id!r}] has unknown field groups {unknown}; use {', '.join(FIELD_GROUPS)}.", 1))
+                        found.append(Finding("fe-readback", f"mutatedProperties[{node_id!r}] has unknown field groups {unknown}; use {', '.join(g for g in FIELD_GROUPS if g != 'other')}, or other:<property> for any other snapshot property (other:opacity, other:rotation).", 1))
         script = data.get("script", "")
         if not connector and isinstance(script, str) and not re.fullmatch(r"[A-Za-z][\w.-]*", script):
             found.append(Finding("fe-script", "live writes run a registered, reviewed script name, not inline code; inline snippets are for read-only probes.", 1))
@@ -441,7 +464,7 @@ def result(text):
         elif verification.get("unexpectedChanges"):
             found.append(Finding("fr-readback", "verification lists unexpectedChanges but ok is true; any unplanned change fails the run.", 1))
         elif verification.get("source") == "snapshot-diff" and verification.get("snapshotSchema") != SNAPSHOT_SCHEMA:
-            found.append(Finding("fr-readback", f"the readback diffed {verification.get('snapshotSchema') or 'figma-sink-snapshot/v1'} snapshots, which have no font, fill, stroke or text-style fields, so a style side effect would pass; re-snapshot with the current snippets/snapshot.js ({SNAPSHOT_SCHEMA}) and rebuild the result with connector.py result.", 1))
+            found.append(Finding("fr-readback", f"the readback diffed {verification.get('snapshotSchema') or 'figma-sink-snapshot/v1'} snapshots, which record only a hand-picked field list, so a change to opacity, rotation, blend mode, constraints or any new property would pass; re-snapshot with the current snippets/snapshot.js ({SNAPSHOT_SCHEMA}) and rebuild the result with connector.py result.", 1))
     for group, keys in ((plan, ("create", "update", "delete", "reparent")), (changes, ("created", "updated", "deleted", "reparented", "selection"))):
         if any(not isinstance(group.get(key, []), list) for key in keys):
             return found + [Finding("fr-format", "plan and changes entries must be lists.", 1)]

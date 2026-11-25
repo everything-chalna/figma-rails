@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "transport": "figma-mcp-use-figma",
+  "command": "edit-cmd_speed_500_edit",
+  "target": {
+    "fileKey": "AbCdEfGhIjKlMnOpQrStUv",
+    "pageId": "0:1",
+    "nodeId": "17:9",
+    "rootNodeId": "0:1"
+  },
+  "skillNames": "figma-use,figma-generate-design",
+  "sessionId": "00000000-0000-4000-8000-000000000000",
+  "args": {
+    "set": {
+      "17:9": {
+        "opacity": 0.5
+      }
+    }
+  },
+  "expectedChanges": {
+    "mutatedNodeIds": [
+      "17:9"
+    ],
+    "createdNames": [],
+    "mutatedProperties": {
+      "17:9": [
+        "other:opacity"
+      ]
+    }
+  },
+  "timeoutMs": 30000,
+  "guards": {
+    "allowMutation": true,
+    "allowedNodeIds": [
+      "17:9"
+    ],
+    "allowedParentIds": [],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 0,
+    "maxDeletedNodes": 0,
+    "maxUpdatedNodes": 1
+  },
+  "steps": [
+    "snapshot-before",
+    "revalidate-target",
+    "apply",
+    "snapshot-after",
+    "compare-plan"
+  ],
+  "commandId": "cmd_speed_500_edit",
+  "script": "runs/cmd_speed_500_edit/edit.js",
+  "dryRun": false
+}

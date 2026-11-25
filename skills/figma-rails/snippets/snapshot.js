@@ -1,78 +1,140 @@
-async ({ rootId, maxNodes = 2000, maxSegments = 50 }) => {
+async ({ rootId, page = 0, pageBytes = 40000, maxNodes = 2000, maxSegments = 50, maxValueChars = 2000 }) => {
   const root = await figma.getNodeByIdAsync(rootId);
   if (!root || !("children" in root)) throw new Error("rootId must resolve to a page or frame-like node: " + rootId);
   if (root.type === "PAGE") await figma.setCurrentPageAsync(root);
   const MIXED = "__mixed__";
-  const READ_GROUPS = ["name", "structure", "geometry", "visibility", "characters", "font", "fill", "stroke", "textStyle", "effect", "radius", "layout"];
-  const num = (v) => (typeof v === "number" ? Math.round(v * 10000) / 10000 : v);
-  const unit = (v) => (v === figma.mixed ? MIXED : v && typeof v === "object" ? { unit: v.unit, ...("value" in v ? { value: num(v.value) } : {}) } : v);
-  const rgba = (c) => c && { r: num(c.r), g: num(c.g), b: num(c.b), ...("a" in c ? { a: num(c.a) } : {}) };
-  const paint = (p) => {
-    const out = { type: p.type, visible: p.visible !== false, opacity: num(p.opacity === undefined ? 1 : p.opacity) };
-    if (p.blendMode && p.blendMode !== "NORMAL") out.blendMode = p.blendMode;
-    if (p.type === "SOLID") out.color = rgba(p.color);
-    if (p.gradientStops) out.gradientStops = p.gradientStops.map((s) => ({ position: num(s.position), color: rgba(s.color) }));
-    if (p.gradientTransform) out.gradientTransform = p.gradientTransform.map((row) => row.map(num));
-    if (p.type === "IMAGE" || p.type === "VIDEO") { out.scaleMode = p.scaleMode; out.mediaHash = p.imageHash || p.videoHash || null; }
-    if (p.boundVariables && p.boundVariables.color) out.colorVariableId = p.boundVariables.color.id;
-    return out;
+  const READ_GROUPS = ["name", "structure", "geometry", "visibility", "characters", "font", "fill", "stroke", "textStyle", "effect", "radius", "layout", "other"];
+  const IGNORED = {
+    id: "the diff key itself",
+    parent: "recorded as parentId",
+    children: "each child records its own parentId and index",
+    removed: "a removed node is absent from the walk",
+    node: "self reference",
+    x: "relative copy of relativeTransform; x and y hold the absolute box",
+    y: "relative copy of relativeTransform; x and y hold the absolute box",
+    width: "width and height hold the absolute box; a resize changes it too",
+    height: "width and height hold the absolute box; a resize changes it too",
+    absoluteBoundingBox: "recorded as x, y, width, height",
+    absoluteTransform: "relativeTransform composed with every ancestor; the absolute box is compared",
+    absoluteRenderBounds: "rasterized glyph and effect bounds, derived from the compared fields",
+    fillGeometry: "outline derived from geometry, text and vector data; 180 KB for one text node",
+    strokeGeometry: "outline derived from strokes and geometry",
+    backgrounds: "deprecated alias of fills",
+    backgroundStyleId: "deprecated alias of fillStyleId",
+    fontWeight: "derived from fontName",
+    padding: "alias of the four paddings",
+    horizontalPadding: "alias of paddingLeft and paddingRight",
+    verticalPadding: "alias of paddingTop and paddingBottom",
+    inferredAutoLayout: "computed suggestion from child positions, not stored",
+    inferredVariables: "computed variable suggestions, not stored",
+    availableInferredVariables: "computed variable suggestions, not stored",
+    variableConsumptionMap: "derived from boundVariables",
+    resolvedVariableModes: "derived from explicitVariableModes and ancestors",
+    isAsset: "heuristic computed from content",
+    hasMissingFont: "depends on the fonts of the machine that runs the plugin",
+    canUpgradeToNativeBidiSupport: "editor capability, not document content",
+    expanded: "layers panel UI state",
+    attachedConnectors: "state of the connector nodes, not this node",
+    stuckNodes: "state of the stuck nodes, not this node",
+    instances: "other nodes; slow to read on a busy component",
+    mainComponent: "throws in dynamic-page files; read with getMainComponentAsync as mainComponentId",
+    masterComponent: "deprecated alias of mainComponent, recorded as mainComponentId",
   };
-  const paints = (v) => (v === figma.mixed ? MIXED : Array.isArray(v) ? v.map(paint) : v);
-  const style = (v) => (v === figma.mixed ? MIXED : v || null);
-  const value = (v) => (typeof v === "number" ? num(v) : Array.isArray(v) ? v.map(value) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, value(x)])) : v);
-  const effect = (e) => {
-    const out = { visible: e.visible !== false };
-    for (const [k, v] of Object.entries(e)) {
-      if (k === "visible") continue;
-      if (k === "boundVariables") { if (v && Object.keys(v).length) out.boundVariables = Object.fromEntries(Object.entries(v).map(([p, a]) => [p, a && a.id])); continue; }
-      out[k] = value(v);
-    }
-    return out;
+  const SEGMENT_FIELDS = ["fontName", "fontSize", "fontStyle", "letterSpacing", "lineHeight", "listOptions", "listSpacing", "indentation", "paragraphIndent", "paragraphSpacing", "textCase", "textDecoration", "textDecorationStyle", "textDecorationOffset", "textDecorationThickness", "textDecorationColor", "textDecorationSkipInk", "textStyleId", "fills", "fillStyleId", "hyperlink", "openTypeFeatures", "boundVariables", "textWrapStyle"];
+  const digest = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0; return h.toString(16).padStart(8, "0"); };
+  const isNode = (v) => v && typeof v === "object" && typeof v.id === "string" && typeof v.type === "string" && "removed" in v;
+  const value = (v, depth = 0) => {
+    if (v === figma.mixed) return MIXED;
+    if (typeof v === "number") return Math.round(v * 10000) / 10000;
+    if (v === null || typeof v !== "object") return v;
+    if (isNode(v)) return { nodeId: v.id };
+    if (depth > 8) return "__deep__";
+    if (Array.isArray(v)) return v.map((x) => value(x, depth + 1));
+    return Object.fromEntries(Object.keys(v).filter((k) => typeof v[k] !== "function").map((k) => [k, value(v[k], depth + 1)]));
   };
-  const pick = (node, keys) => Object.fromEntries(keys.filter((k) => k in node).map((k) => [k, node[k] === figma.mixed ? MIXED : num(node[k])]));
-  const FRAME_LAYOUT = ["layoutMode", "primaryAxisSizingMode", "counterAxisSizingMode", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "itemSpacing", "counterAxisSpacing", "primaryAxisAlignItems", "counterAxisAlignItems", "layoutWrap"];
-  const CHILD_LAYOUT = ["layoutAlign", "layoutGrow", "layoutPositioning", "layoutSizingHorizontal", "layoutSizingVertical"];
-  const CORNERS = ["topLeftRadius", "topRightRadius", "bottomRightRadius", "bottomLeftRadius"];
-  const TEXT_FIELDS = ["fontName", "fontSize", "lineHeight", "letterSpacing", "textStyleId", "fills", "fillStyleId"];
-  const segValue = (k, v) => (k === "fills" ? paints(v) : k === "lineHeight" || k === "letterSpacing" ? unit(v) : k === "fontName" ? { family: v.family, style: v.style } : num(v));
+  const bounded = (v) => {
+    const text = JSON.stringify(v);
+    return text !== undefined && text.length > maxValueChars ? { __digest__: digest(text), length: text.length } : v;
+  };
+  const propNames = (node) => {
+    const names = new Set();
+    for (let o = node; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) for (const k of Object.getOwnPropertyNames(o)) if (k !== "constructor") names.add(k);
+    return [...names].filter((k) => !(k in IGNORED)).sort();
+  };
   const nodes = [];
-  const walk = (node, depth) => {
+  const walk = (node, depth, index) => {
     if (nodes.length >= maxNodes) throw new Error("snapshot over maxNodes=" + maxNodes + "; narrow rootId");
     const b = node.absoluteBoundingBox || { x: node.x, y: node.y, width: node.width, height: node.height };
-    const entry = {
-      id: node.id, name: node.name, type: node.type, parentId: node.parent && node.parent.id, depth,
-      x: b.x, y: b.y, width: b.width, height: b.height,
-      visible: node.visible !== false, locked: Boolean(node.locked),
-    };
-    if ("fills" in node) Object.assign(entry, { fills: paints(node.fills), fillStyleId: style(node.fillStyleId) });
-    if ("strokes" in node) Object.assign(entry, { strokes: paints(node.strokes), strokeStyleId: style(node.strokeStyleId), strokeWeight: node.strokeWeight === figma.mixed ? MIXED : num(node.strokeWeight) });
-    if ("effects" in node) Object.assign(entry, { effects: node.effects.map(effect), effectStyleId: style(node.effectStyleId) });
-    if ("cornerRadius" in node) Object.assign(entry, { cornerRadius: node.cornerRadius === figma.mixed ? MIXED : num(node.cornerRadius), ...(node.cornerRadius === figma.mixed ? pick(node, CORNERS) : {}), ...pick(node, ["cornerSmoothing"]) });
-    if ("layoutMode" in node) Object.assign(entry, node.layoutMode === "NONE" ? { layoutMode: "NONE" } : pick(node, FRAME_LAYOUT));
-    if (node.parent && "layoutMode" in node.parent && node.parent.layoutMode !== "NONE") Object.assign(entry, pick(node, CHILD_LAYOUT));
+    const entry = {};
+    for (const k of propNames(node)) {
+      let v;
+      try { v = node[k]; } catch (e) { continue; }
+      if (typeof v === "function" || v === undefined) continue;
+      Object.assign(entry, { [k]: bounded(value(v)) });
+    }
+    Object.assign(entry, { id: node.id, parentId: node.parent && node.parent.id, depth, index, x: value(b.x), y: value(b.y), width: value(b.width), height: value(b.height) });
     if (node.type === "TEXT") {
-      Object.assign(entry, {
-        characters: String(node.characters).slice(0, 200),
-        fontName: node.fontName === figma.mixed ? MIXED : { family: node.fontName.family, style: node.fontName.style },
-        fontSize: node.fontSize === figma.mixed ? MIXED : num(node.fontSize),
-        lineHeight: unit(node.lineHeight),
-        letterSpacing: unit(node.letterSpacing),
-        textAlignHorizontal: node.textAlignHorizontal,
-        textAlignVertical: node.textAlignVertical,
-        textStyleId: style(node.textStyleId),
-      });
-      const mixed = TEXT_FIELDS.filter((k) => node[k] === figma.mixed);
+      const text = String(node.characters);
+      Object.assign(entry, { characters: text.slice(0, 200), ...(text.length > 200 ? { charactersDigest: digest(text), charactersLength: text.length } : {}) });
+      const mixed = SEGMENT_FIELDS.filter((k) => k in node && node[k] === figma.mixed);
       if (mixed.length) {
         const segs = node.getStyledTextSegments(mixed);
         Object.assign(entry, {
-          segments: segs.slice(0, maxSegments).map((seg) => Object.fromEntries([["start", seg.start], ["end", seg.end], ...mixed.map((k) => [k, segValue(k, seg[k])])])),
+          segments: segs.slice(0, maxSegments).map((seg) => Object.fromEntries([["start", seg.start], ["end", seg.end], ...mixed.map((k) => [k, bounded(value(seg[k]))])])),
           ...(segs.length > maxSegments ? { segmentsTruncated: segs.length } : {}),
         });
       }
     }
     nodes.push(entry);
-    if ("children" in node) for (const c of node.children) walk(c, depth + 1);
+    if (node.type === "INSTANCE") instances.push([entry, node]);
+    if ("children" in node) node.children.forEach((c, i) => walk(c, depth + 1, i));
   };
-  for (const c of root.children) walk(c, 1);
-  return { schemaVersion: "figma-sink-snapshot/v2", readGroups: READ_GROUPS, rootId: root.id, rootType: root.type, nodes };
+  const instances = [];
+  // use_figma runs with skipInvisibleInstanceChildren on, which drops hidden layers inside instances
+  // from `children`: hiding one would read as a delete, and a hidden one would never be compared.
+  const skipInvisible = figma.skipInvisibleInstanceChildren;
+  figma.skipInvisibleInstanceChildren = false;
+  try {
+    root.children.forEach((c, i) => walk(c, 1, i));
+  } finally {
+    figma.skipInvisibleInstanceChildren = skipInvisible;
+  }
+  for (const [entry, node] of instances) {
+    const main = await node.getMainComponentAsync();
+    Object.assign(entry, { mainComponentId: main ? main.id : null });
+  }
+  // use_figma refuses a return value over 48,000 bytes, and one node is about 2.4 KB. Values shared by
+  // most nodes of a type go once into `defaults`, and the nodes are split into pages of `pageBytes`.
+  const defaults = {};
+  const byType = {};
+  for (const n of nodes) (byType[n.type] = byType[n.type] || []).push(n);
+  for (const [type, list] of Object.entries(byType)) {
+    if (list.length < 2) continue;
+    const counts = {};
+    for (const n of list) for (const k of Object.keys(n)) if (k !== "id" && k !== "type") { const key = k + "\u0000" + JSON.stringify(n[k]); counts[key] = (counts[key] || 0) + 1; }
+    const best = {};
+    for (const [key, c] of Object.entries(counts)) { const cut = key.indexOf("\u0000"); const k = key.slice(0, cut); if (c >= 2 && (!best[k] || c > best[k][1])) best[k] = [key.slice(cut + 1), c]; }
+    defaults[type] = Object.fromEntries(Object.entries(best).map(([k, [v]]) => [k, JSON.parse(v)]));
+  }
+  const packed = nodes.map((n) => {
+    const d = defaults[n.type] || {};
+    const out = {};
+    for (const k of Object.keys(n)) if (!(k in d) || JSON.stringify(d[k]) !== JSON.stringify(n[k])) out[k] = n[k];
+    const absent = Object.keys(d).filter((k) => !(k in n));
+    return absent.length ? Object.assign(out, { __absent__: absent }) : out;
+  });
+  const snapshotDigest = digest(JSON.stringify([defaults, packed]));
+  const pages = [[]];
+  let used = JSON.stringify(defaults).length;
+  for (const n of packed) {
+    const size = JSON.stringify(n).length + 1;
+    if (pages[pages.length - 1].length && used + size > pageBytes) { pages.push([]); used = 0; }
+    pages[pages.length - 1].push(n);
+    used += size;
+  }
+  if (!(page >= 0 && page < pages.length)) throw new Error("page " + page + " is outside 0.." + (pages.length - 1));
+  return {
+    schemaVersion: "figma-sink-snapshot/v3", transport: "figma-sink-pages/v1", readGroups: READ_GROUPS, ignored: Object.keys(IGNORED).sort(), rootId: root.id, rootType: root.type,
+    snapshotDigest, page, pages: pages.length, total: packed.length, ...(page === 0 ? { defaults } : {}), nodes: pages[page],
+  };
 }
