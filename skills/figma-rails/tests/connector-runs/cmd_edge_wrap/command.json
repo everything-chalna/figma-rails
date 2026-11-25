@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "figma-cli-command/v1",
+  "transport": "figma-mcp-use-figma",
+  "command": "edit-cmd_edge_wrap",
+  "target": {
+    "fileKey": "AbCdEfGhIjKlMnOpQrStUv",
+    "pageId": "0:1",
+    "nodeId": "6:4",
+    "rootNodeId": "0:1"
+  },
+  "skillNames": "figma-use,figma-generate-design",
+  "sessionId": "00000000-0000-4000-8000-000000000000",
+  "args": {
+    "set": {
+      "6:4": {
+        "layoutWrap": "WRAP",
+        "counterAxisSpacing": 8
+      }
+    }
+  },
+  "expectedChanges": {
+    "mutatedNodeIds": [
+      "6:4",
+      "6:8",
+      "6:9",
+      "6:10"
+    ],
+    "createdNames": [],
+    "mutatedProperties": {
+      "6:4": [
+        "geometry"
+      ],
+      "6:8": [
+        "geometry"
+      ],
+      "6:9": [
+        "geometry"
+      ],
+      "6:10": [
+        "geometry"
+      ]
+    }
+  },
+  "timeoutMs": 30000,
+  "guards": {
+    "allowMutation": true,
+    "allowedNodeIds": [
+      "6:4",
+      "6:8",
+      "6:9",
+      "6:10"
+    ],
+    "allowedParentIds": [],
+    "generatedPrefix": "__figma_sink__",
+    "requireGeneratedPrefixForDelete": true,
+    "requireExplicitIdsForDelete": true,
+    "maxCreatedNodes": 0,
+    "maxDeletedNodes": 0,
+    "maxUpdatedNodes": 4
+  },
+  "steps": [
+    "snapshot-before",
+    "revalidate-target",
+    "apply",
+    "snapshot-after",
+    "compare-plan"
+  ],
+  "commandId": "cmd_edge_wrap",
+  "script": "runs/cmd_edge_wrap/edit.js",
+  "dryRun": false
+}

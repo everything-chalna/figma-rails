@@ -101,8 +101,12 @@ FIELD_GROUPS = {
     "fill": ("fills", "fillStyleId"),
     "stroke": ("strokes", "strokeStyleId", "strokeWeight"),
     "textStyle": ("textStyleId",),
+    "effect": ("effects", "effectStyleId"),
+    "radius": ("cornerRadius", "topLeftRadius", "topRightRadius", "bottomRightRadius", "bottomLeftRadius", "cornerSmoothing"),
+    "layout": ("layoutMode", "primaryAxisSizingMode", "counterAxisSizingMode", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "itemSpacing", "counterAxisSpacing", "primaryAxisAlignItems", "counterAxisAlignItems", "layoutWrap",
+               "layoutAlign", "layoutGrow", "layoutPositioning", "layoutSizingHorizontal", "layoutSizingVertical"),
 }
-STYLE_GROUPS = ("font", "fill", "stroke", "textStyle")
+EXPLICIT_GROUPS = ("font", "fill", "stroke", "textStyle", "effect", "radius", "layout")
 FIGMA_DEFAULT_NAMES = {"frame", "group", "rectangle", "text", "vector", "ellipse", "component", "section", "image", "layer"}
 
 

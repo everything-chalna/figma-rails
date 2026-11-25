@@ -1,4 +1,6 @@
 import json
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -133,6 +135,107 @@ class StyleReadbackTest(unittest.TestCase):
     def test_result_records_snapshot_schema_for_the_checker(self):
         out = build_planned("cmd_style_fill")
         self.assertEqual(out["verification"]["snapshotSchema"], "figma-sink-snapshot/v2")
+
+
+class LayoutReadbackTest(unittest.TestCase):
+    """Live snapshots from a scratch file (2026-11-25): card drop shadow, card top-left radius 12 -> 0, chip vertical padding 4 -> 12 inside a hugging card."""
+
+    def test_effect_change_fails_unless_planned(self):
+        self.assertEqual(kinds(build("cmd_layout_effect")), [("unplanned-field", ["effect"])])
+        self.assertTrue(build_planned("cmd_layout_effect")["ok"])
+
+    def test_radius_change_to_mixed_corners_fails_unless_planned(self):
+        node = next(n for n in load("cmd_layout_radius", "after.json")["nodes"] if n["id"] == "3:2")
+        self.assertEqual((node["cornerRadius"], node["topLeftRadius"], node["topRightRadius"]), ("__mixed__", 0, 12))
+        self.assertEqual(kinds(build("cmd_layout_radius")), [("unplanned-field", ["radius"])])
+        self.assertTrue(build_planned("cmd_layout_radius")["ok"])
+
+    def test_padding_change_fails_unless_layout_is_planned(self):
+        self.assertEqual(kinds(build("cmd_layout_padding")), [("unplanned-field", ["layout"])])
+        self.assertTrue(build_planned("cmd_layout_padding")["ok"])
+
+    def test_padding_that_grows_the_hug_parent_is_caught(self):
+        command = load("cmd_layout_padding", "command.hug-unplanned.json")
+        out = connector.build_result(command, load("cmd_layout_padding", "before.json"), load("cmd_layout_padding", "after.json"))
+        self.assertEqual(kinds(out), [("unplanned-update", ["geometry"])])
+        self.assertEqual(out["verification"]["unexpectedChanges"][0]["id"], "3:2")
+
+    def test_figdone_report_of_the_direct_edit_passes_with_planned_side_effects(self):
+        reported = connector.reported_ids(load("cmd_layout_padding", "returned.json"))
+        self.assertEqual(reported["updated"], ["3:5"])
+        self.assertTrue(build_planned("cmd_layout_padding", reported=reported)["ok"])
+
+    def test_snapshot_without_new_groups_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = Path(tmp, "old.json")
+            data = load("cmd_layout_effect", "before.json")
+            data["readGroups"] = data["readGroups"][:9]
+            old.write_text(json.dumps(data))
+            proc = run_cli("ingest", old, "-o", Path(tmp, "out.json"))
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("did not read effect, radius, layout", proc.stderr)
+
+    def test_snapshot_snippet_reads_every_checker_group(self):
+        src = (SKILL / "snippets" / "snapshot.js").read_text()
+        groups = json.loads(re.search(r"const READ_GROUPS = (\[[^\]]*\]);", src).group(1))
+        self.assertEqual(groups, list(connector.FIELD_GROUPS))
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_snapshot_keeps_every_effect_field(self):
+        # Raw effects read from the live scratch card (2026-11-25): a normal -> progressive blur switch kept type and radius.
+        progressive = {"type": "LAYER_BLUR", "visible": True, "radius": 8, "boundVariables": {}, "blurType": "PROGRESSIVE",
+                       "startRadius": 0, "startOffset": {"x": 0.5, "y": 0}, "endOffset": {"x": 0.5, "y": 1}}
+        shadow = {"type": "DROP_SHADOW", "visible": True, "blendMode": "NORMAL", "color": {"r": 0, "g": 0, "b": 0, "a": 0.2},
+                  "offset": {"x": 0, "y": 4}, "radius": 12, "spread": 0, "showShadowBehindNode": False,
+                  "boundVariables": {"radius": {"type": "VARIABLE_ALIAS", "id": "VariableID:1:2"}}}
+        node = snapshot_with_effects([progressive, shadow])
+        self.assertEqual(node["effects"][0], {"visible": True, "type": "LAYER_BLUR", "radius": 8, "blurType": "PROGRESSIVE",
+                                              "startRadius": 0, "startOffset": {"x": 0.5, "y": 0}, "endOffset": {"x": 0.5, "y": 1}})
+        self.assertEqual(node["effects"][1]["boundVariables"], {"radius": "VariableID:1:2"})
+        self.assertEqual(node["effects"][1]["color"], {"r": 0, "g": 0, "b": 0, "a": 0.2})
+
+
+class EdgeReadbackTest(unittest.TestCase):
+    """Live snapshots from a scratch file (2026-11-25): progressive -> normal layer blur, cornerSmoothing 0 -> 0.6, NO_WRAP -> WRAP with counterAxisSpacing 8, and a stack child set to ABSOLUTE."""
+
+    def test_blur_type_change_fails_unless_planned(self):
+        before = next(n for n in load("cmd_edge_blur_type", "before.json")["nodes"] if n["id"] == "6:2")
+        self.assertEqual(before["effects"][0]["blurType"], "PROGRESSIVE")
+        self.assertEqual(kinds(build("cmd_edge_blur_type")), [("unplanned-field", ["effect"])])
+        self.assertTrue(build_planned("cmd_edge_blur_type")["ok"])
+
+    def test_corner_smoothing_change_fails_unless_planned(self):
+        self.assertEqual(kinds(build("cmd_edge_smoothing")), [("unplanned-field", ["radius"])])
+        self.assertTrue(build_planned("cmd_edge_smoothing")["ok"])
+
+    def test_wrap_fails_unless_planned_and_catches_moved_children(self):
+        self.assertEqual(kinds(build("cmd_edge_wrap")), [("unplanned-field", ["layout"])])
+        self.assertTrue(build_planned("cmd_edge_wrap", reported=connector.reported_ids(load("cmd_edge_wrap", "returned.json")))["ok"])
+        out = connector.build_result(load("cmd_edge_wrap", "command.children-unplanned.json"), load("cmd_edge_wrap", "before.json"), load("cmd_edge_wrap", "after.json"))
+        self.assertEqual([u["id"] for u in out["verification"]["unexpectedChanges"]], ["6:8", "6:9", "6:10"])
+
+    def test_absolute_child_fails_unless_planned_and_catches_the_shift(self):
+        self.assertEqual(kinds(build("cmd_edge_absolute")), [("unplanned-field", ["layout"])])
+        self.assertTrue(build_planned("cmd_edge_absolute")["ok"])
+        out = connector.build_result(load("cmd_edge_absolute", "command.siblings-unplanned.json"), load("cmd_edge_absolute", "before.json"), load("cmd_edge_absolute", "after.json"))
+        self.assertEqual(kinds(out), [("unplanned-update", ["geometry"])] * 2)
+
+
+SNAPSHOT_HARNESS = """
+const src = require("fs").readFileSync(process.argv[1], "utf8");
+const effects = JSON.parse(process.argv[2]);
+const page = { id: "0:1", type: "PAGE", children: [] };
+page.children.push({ id: "6:2", name: "card", type: "FRAME", parent: page, x: 0, y: 0, width: 160, height: 80, visible: true, locked: false,
+  fills: [], fillStyleId: "", strokes: [], strokeStyleId: "", strokeWeight: 1, effects, effectStyleId: "", cornerRadius: 16, cornerSmoothing: 0, layoutMode: "NONE" });
+globalThis.figma = { mixed: Symbol("mixed"), getNodeByIdAsync: async () => page, setCurrentPageAsync: async () => {} };
+eval(src)({ rootId: "0:1" }).then((out) => console.log(JSON.stringify(out.nodes[0])));
+"""
+
+
+def snapshot_with_effects(effects):
+    proc = subprocess.run(["node", "-e", SNAPSHOT_HARNESS, str(SKILL / "snippets" / "snapshot.js"), json.dumps(effects)],
+                          capture_output=True, text=True, check=True)
+    return json.loads(proc.stdout)
 
 
 def run_cli(*args):
