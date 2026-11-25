@@ -1,5 +1,9 @@
 # Figma Rails
 
+## Why
+
+The constraints are the point, not the transport. Plugin API code and the actual file result often did not match. I added lint before the code ran, and a before/after readback after it, and that made a huge quality difference.
+
 Figma Rails is a constraint layer for Figma Plugin API runs. The official Figma connector can already execute code in a file through `use_figma`. A connector only runs that code. Figma Rails lints the code before it is sent, then judges a before/after snapshot of the document instead of the code's own report.
 
 That difference is the reason this project exists next to the connector. Connector results often look successful while the file does not match the plan. Readback catches those mismatches. A text edit that reports a single text node can still resize a hugging parent frame; if that parent was not in the plan, the snapshot diff fails the run even though the code never mentioned it.
@@ -21,10 +25,6 @@ python3 skills/figma-rails/connector.py render skills/figma-rails/snippets/snaps
 
 3. Dry-run first: render the `dryRun: true` envelope to `runs/<commandId>/dry-run/<name>.js` and send it. The live render goes to `runs/<commandId>/<name>.js`, keeps the dry-run files, and refuses an envelope that plans anything the dry run did not.
 4. Send the rendered file unchanged as `use_figma` code. Snapshot the same scope before and after. `connector.py result` diffs those snapshots into a `figma-cli-result/v1` and fails on any create, update, or delete the envelope did not plan, including a parent frame that resized and a font, fill, stroke, or text style that changed on a node whose plan did not list it. If `use_figma` wrote its result to a file, `connector.py ingest <file> -o before.json` unwraps it; `result` reads wrapped files too.
-
-The snapshot (`figma-sink-snapshot/v2`) records geometry, visibility, text, typography (font, size, line height, letter spacing, alignment, text style, per range when mixed), and fills and strokes. It does not cover effects, node opacity or blend mode, corner radius, auto-layout settings, or image pixels; check those with a screenshot.
-
-New test work goes in a new file. Do not write into a file someone else is editing.
 
 ## Transports
 
@@ -61,22 +61,19 @@ python3 -m unittest discover -v
 
 ## Safety posture
 
-- The CDP debugging port listens on loopback only, in a profile used for nothing else. Never tunnel it, never read cookies or tokens, and stop only the browser process you started.
 - Every command is an envelope with an explicit `fileKey`, `pageId`, and `nodeId`. `dryRun` defaults to true. A live write needs `allowMutation`, an explicit id or parent scope, and caps on created, updated, and deleted nodes.
+- Unplanned changes fail. The same scope is read back after the command. The before/after diff decides success, and the script's own report is checked against that diff.
 - Deletes take explicit ids only, limited to nodes carrying a generated-name prefix or ids the command names. Nothing is deleted by name.
-- After a command, the same scope is read back. The before/after diff, not the script's own report, decides success. Any change outside the plan fails the run, and so does a report that misses a change or claims one that did not land.
+- CDP is a fallback. Its debugging port listens on loopback only, in a profile used for nothing else. Never tunnel it, never read cookies or tokens, and stop only the browser process you started.
 
-## Design fidelity
+## Other uses
 
-When a build is derived from a Figma frame, the frame is the contract. Export the source frame, render the build at the same viewport, scale, theme, and state, compare whole-frame and per-region, record every mismatch, and repeat until no blocking mismatch is left or one is explicitly waived. Report gaps instead of shipping a silent approximation.
-
-## Webpage to Figma
-
-- A single full-page screenshot misses sticky, scroll-animated, and lazy-loaded states. Capture real viewport states at chosen scroll positions and place each key state once.
-- Real media (photos, video posters, dense product UI, logos) become image fills. Copy, cards, forms, grids, navigation, and footers become editable text and frames.
-- Structure the result as a designer would: one page frame, numbered section frames in reading order, layers named by role, and a separate mobile frame when the layout changes.
-- Before handoff, a read-only structure audit must show no locked layers, no reference or screenshot-only layers, no leaked icon-font text such as `play_arrow Watch Video`, and every node inside the page frame. Focused slice exports cover what the audit cannot judge.
+The same rails work for matching a build to a Figma frame, and for rebuilding a webpage as editable Figma layers. Lint the plan, then judge the file by a before/after readback instead of the code's own report.
 
 ## Status
+
+Readback compares geometry, visibility, text, and typography, including mixed ranges. It also compares fills, strokes, and text style.
+
+It does not yet compare effects, opacity or blend, corner radius, auto-layout, constraints, rotation, component properties, or image pixels. Text longer than 200 characters, and a node with more than 50 segments, are outside the diff too. Check those with a screenshot.
 
 The skill, lint checker, and runner are in this repository at `skills/figma-rails/`. This repository is MIT licensed.
